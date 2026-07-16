@@ -1,8 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { usePage } from '@inertiajs/react';
 import {
-    BookOpen,
-    FolderGit2,
     LayoutGrid,
     Settings,
     Shield,
@@ -11,7 +9,6 @@ import {
     FolderKanban,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
-import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
 import {
@@ -34,22 +31,9 @@ const mainNavItems: NavItem[] = [
     },
 ];
 
-const footerNavItems: NavItem[] = [
-    {
-        title: 'Repository',
-        href: 'https://github.com/laravel/react-starter-kit',
-        icon: FolderGit2,
-    },
-    {
-        title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#react',
-        icon: BookOpen,
-    },
-];
-
 export function AppSidebar() {
     const { auth } = usePage().props;
-    const adminItems: NavItem[] = auth.user?.is_super_admin
+    const administrationItems: NavItem[] = auth.user?.is_super_admin
         ? [
               { title: 'Users', href: '/admin/users', icon: Users },
               {
@@ -62,6 +46,10 @@ export function AppSidebar() {
                   href: '/admin/settings',
                   icon: Settings,
               },
+          ]
+        : [];
+    const procurementItems: NavItem[] = auth.user?.is_super_admin
+        ? [
               { title: 'Excel Imports', href: '/admin/imports', icon: Upload },
               {
                   title: 'Projects',
@@ -86,12 +74,19 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={mainNavItems} />
-                {adminItems.length > 0 && <NavMain items={adminItems} />}
+                <NavMain items={mainNavItems} label="Workspace" />
+                {administrationItems.length > 0 && (
+                    <NavMain
+                        items={administrationItems}
+                        label="Administration"
+                    />
+                )}
+                {procurementItems.length > 0 && (
+                    <NavMain items={procurementItems} label="Procurement" />
+                )}
             </SidebarContent>
 
             <SidebarFooter>
-                <NavFooter items={footerNavItems} className="mt-auto" />
                 <NavUser />
             </SidebarFooter>
         </Sidebar>
