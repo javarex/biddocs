@@ -1,0 +1,314 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Project;
+use App\Models\ProjectItem;
+use DOMDocument;
+use DOMElement;
+use DOMNode;
+use DOMXPath;
+use Illuminate\Support\Str;
+use NumberFormatter;
+use RuntimeException;
+use ZipArchive;
+
+class BidDocumentService
+{
+    private const WORD_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+    public function generate(Project $project): string
+    {
+        $template = (string) config('bid-documents.template');
+        if (! str_starts_with($template, DIRECTORY_SEPARATOR) && ! preg_match('/^[A-Za-z]:[\\\\\/]/', $template)) {
+            $template = base_path($template);
+        }
+        if (! is_file($template) || ! is_readable($template)) {
+            throw new RuntimeException('The bid document template is unavailable.');
+        }
+
+        $project->load([
+            'sections' => fn ($query) => $query->orderBy('id'),
+            'sections.subSections' => fn ($query) => $query->orderBy('id'),
+            'sections.subSections.projectItems' => fn ($query) => $query->orderBy('id'),
+        ]);
+
+        $temporary = tempnam(storage_path('app/private'), 'bid-doc-');
+        if ($temporary === false) {
+            throw new RuntimeException('Unable to create the generated bid document.');
+        }
+        $output = $temporary.'.docx';
+        rename($temporary, $output);
+        if (! copy($template, $output)) {
+            throw new RuntimeException('Unable to copy the bid document template.');
+        }
+
+        $archive = new ZipArchive;
+        if ($archive->open($output) !== true) {
+            throw new RuntimeException('Unable to open the generated bid document.');
+        }
+
+        try {
+            $xmlEntries = [];
+            for ($index = 0; $index < $archive->numFiles; $index++) {
+                $name = $archive->getNameIndex($index);
+                if (is_string($name) && preg_match('#^word/(document|header\d+|footer\d+)\.xml$#', $name)) {
+                    $xmlEntries[] = $name;
+                }
+            }
+
+            foreach ($xmlEntries as $name) {
+                $xml = $archive->getFromName($name);
+                if (! is_string($xml)) {
+                    continue;
+                }
+
+                $document = $this->loadXml($xml);
+                $this->replaceProjectContent($document, $project);
+                if ($name === 'word/document.xml') {
+                    $this->replaceBillOfQuantities($document, $project);
+                }
+                $archive->addFromString($name, $document->saveXML() ?: $xml);
+            }
+        } finally {
+            $archive->close();
+        }
+
+        return $output;
+    }
+
+    private function loadXml(string $xml): DOMDocument
+    {
+        $document = new DOMDocument;
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $document->loadXML($xml, LIBXML_NONET | LIBXML_COMPACT);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        if (! $loaded) {
+            throw new RuntimeException('The bid document XML could not be parsed.');
+        }
+
+        return $document;
+    }
+
+    private function replaceProjectContent(DOMDocument $document, Project $project): void
+    {
+        $xpath = $this->xpath($document);
+        $total = (float) $project->items()->sum('total_cost');
+        $durationWords = $this->numberWords($project->contract_duration);
+        $amountWords = $this->currencyWords($total);
+
+        foreach ($xpath->query('//w:p') ?: [] as $paragraph) {
+            if (! $paragraph instanceof DOMElement) {
+                continue;
+            }
+            $text = $this->nodeText($xpath, $paragraph);
+            if ($text === '') {
+                continue;
+            }
+
+            $updated = preg_replace(
+                '/Construction of\s*1\s*Unit,?\s*1-Storey,?\s*2[\s-]*Classroom\s*School\s*Building\s*at\s*Buhi\s*Elementary\s*School,?\s*Brgy\s*\.?\s*Ampawid\s*,?\s*Laak\s*,?\s*Davao\s*de\s*Oro/i',
+                $project->project_name,
+                preg_replace('/\s+/u', ' ', trim($text)) ?? $text,
+            ) ?? $text;
+            $updated = preg_replace(
+                '/Prk\s*\.?\s*1\s*,?\s*(?:Brgy\s*\.?\s*)?Ampawid\s*,?\s*Laak\s*,?\s*Davao\s*de\s*Oro/i',
+                $project->location,
+                $updated,
+            ) ?? $updated;
+            $updated = preg_replace(
+                '/One\s+Hundred\s+Six\s*ty\s*\(\s*16\s*0\s*\)/i',
+                "{$durationWords} ({$project->contract_duration})",
+                $updated,
+            ) ?? $updated;
+            $updated = preg_replace('/CW25-\s*_+/i', $project->project_code, $updated) ?? $updated;
+            $updated = preg_replace('/7\s*,\s*194\s*,\s*519\.49/', number_format($total, 2), $updated) ?? $updated;
+            $updated = preg_replace(
+                '/Seven\s+Million\s+One\s+Hundred\s+Ninety-Four\s+Thousand\s+Five\s+Hundred\s+Nineteen\s+Pesos\s+and\s+Forty-Nine\s+Centavos\s+Only/i',
+                $amountWords,
+                $updated,
+            ) ?? $updated;
+
+            if ($updated !== $text) {
+                $this->setNodeText($xpath, $paragraph, $updated);
+            }
+        }
+    }
+
+    private function replaceBillOfQuantities(DOMDocument $document, Project $project): void
+    {
+        $xpath = $this->xpath($document);
+        foreach ($xpath->query('//w:tbl') ?: [] as $table) {
+            if (! $table instanceof DOMElement || ! Str::contains($this->nodeText($xpath, $table), 'BILL OF QUANTITIES')) {
+                continue;
+            }
+
+            $rows = iterator_to_array($xpath->query('./w:tr', $table) ?: []);
+            $header = null;
+            $total = null;
+            $sectionTemplate = null;
+            $itemTemplate = null;
+
+            foreach ($rows as $row) {
+                if (! $row instanceof DOMElement) {
+                    continue;
+                }
+                $cells = $xpath->query('./w:tc', $row);
+                if ($cells === false) {
+                    continue;
+                }
+                $text = $this->nodeText($xpath, $row);
+                if ($cells->length === 6 && Str::contains($text, 'Item No.')) {
+                    $header = $row;
+                } elseif ($cells->length === 1 && Str::startsWith(trim($text), 'TOTAL BID AMOUNT')) {
+                    $total = $row;
+                } elseif ($header !== null && $total === null && $cells->length === 1 && $sectionTemplate === null) {
+                    $sectionTemplate = $row;
+                } elseif ($header !== null && $total === null && $cells->length === 6 && $itemTemplate === null) {
+                    $itemTemplate = $row;
+                }
+            }
+
+            if (! $header instanceof DOMElement || ! $total instanceof DOMElement || ! $sectionTemplate instanceof DOMElement || ! $itemTemplate instanceof DOMElement) {
+                return;
+            }
+
+            $removing = false;
+            foreach ($rows as $row) {
+                if ($row === $header) {
+                    $removing = true;
+
+                    continue;
+                }
+                if ($row === $total) {
+                    break;
+                }
+                if ($removing && $row instanceof DOMNode) {
+                    $table->removeChild($row);
+                }
+            }
+
+            foreach ($project->sections as $section) {
+                $this->insertSectionRow($document, $xpath, $table, $total, $sectionTemplate, $section->section);
+                foreach ($section->subSections as $subSection) {
+                    if (Str::lower(trim($subSection->sub_section)) !== 'imported items') {
+                        $this->insertSectionRow($document, $xpath, $table, $total, $sectionTemplate, $subSection->sub_section);
+                    }
+                    foreach ($subSection->projectItems as $item) {
+                        $this->insertItemRow($document, $xpath, $table, $total, $itemTemplate, $item);
+                    }
+                }
+            }
+
+            $totalValue = (float) $project->items()->sum('total_cost');
+            $this->setNodeText($xpath, $total, 'TOTAL BID AMOUNT (PHP) '.number_format($totalValue, 2));
+            $next = $total->nextSibling;
+            while ($next !== null && ! $next instanceof DOMElement) {
+                $next = $next->nextSibling;
+            }
+            if ($next instanceof DOMElement) {
+                $this->setNodeText($xpath, $next, 'AMOUNT IN WORDS: '.$this->currencyWords($totalValue));
+            }
+
+            return;
+        }
+    }
+
+    private function insertSectionRow(DOMDocument $document, DOMXPath $xpath, DOMElement $table, DOMElement $before, DOMElement $template, string $label): void
+    {
+        $row = $document->importNode($template->cloneNode(true), true);
+        if ($row instanceof DOMElement) {
+            $this->setNodeText($xpath, $row, $label);
+            $table->insertBefore($row, $before);
+        }
+    }
+
+    private function insertItemRow(DOMDocument $document, DOMXPath $xpath, DOMElement $table, DOMElement $before, DOMElement $template, ProjectItem $item): void
+    {
+        $row = $document->importNode($template->cloneNode(true), true);
+        if (! $row instanceof DOMElement) {
+            return;
+        }
+        $cells = $xpath->query('./w:tc', $row);
+        if ($cells === false) {
+            return;
+        }
+        $values = [
+            $item->pay_item_no,
+            $item->description,
+            $item->unit,
+            number_format($item->qty, 2),
+            number_format($item->unit_cost_adjusted, 2),
+            number_format($item->total_cost, 2),
+        ];
+        foreach ($values as $index => $value) {
+            $cell = $cells->item($index);
+            if ($cell instanceof DOMElement) {
+                $this->setNodeText($xpath, $cell, $value);
+            }
+        }
+        $table->insertBefore($row, $before);
+    }
+
+    private function xpath(DOMDocument $document): DOMXPath
+    {
+        $xpath = new DOMXPath($document);
+        $xpath->registerNamespace('w', self::WORD_NAMESPACE);
+
+        return $xpath;
+    }
+
+    private function nodeText(DOMXPath $xpath, DOMNode $node): string
+    {
+        $parts = [];
+        foreach ($xpath->query('.//w:t', $node) ?: [] as $textNode) {
+            if ($textNode instanceof DOMNode) {
+                $parts[] = $textNode->textContent;
+            }
+        }
+
+        return trim(implode('', $parts));
+    }
+
+    private function setNodeText(DOMXPath $xpath, DOMNode $node, string $value): void
+    {
+        $textNodes = iterator_to_array($xpath->query('.//w:t', $node) ?: []);
+        $first = array_shift($textNodes);
+        if (! $first instanceof DOMNode) {
+            return;
+        }
+        if ($first instanceof DOMElement) {
+            while ($first->firstChild !== null) {
+                $first->removeChild($first->firstChild);
+            }
+            $first->appendChild($first->ownerDocument->createTextNode($value));
+            $first->setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+        } else {
+            $first->nodeValue = $value;
+        }
+        foreach ($textNodes as $textNode) {
+            $textNode->nodeValue = '';
+        }
+    }
+
+    private function numberWords(int $number): string
+    {
+        $formatter = new NumberFormatter('en', NumberFormatter::SPELLOUT);
+
+        return Str::title(str_replace('-', ' ', (string) $formatter->format($number)));
+    }
+
+    private function currencyWords(float $amount): string
+    {
+        $pesos = (int) floor($amount);
+        $centavos = (int) round(($amount - $pesos) * 100);
+        $words = $this->numberWords($pesos).' Pesos';
+        if ($centavos > 0) {
+            $words .= ' And '.$this->numberWords($centavos).' Centavos';
+        }
+
+        return $words.' Only';
+    }
+}
