@@ -1,4 +1,4 @@
-import { Form, Head } from '@inertiajs/react';
+import { Form, Head, usePage } from '@inertiajs/react';
 import InputError from '@/components/input-error';
 import PasskeyVerify from '@/components/passkey-verify';
 import PasswordInput from '@/components/password-input';
@@ -17,6 +17,8 @@ type Props = {
 };
 
 export default function Login({ status, canResetPassword }: Props) {
+    const { csrf_token } = usePage<{ csrf_token: string }>().props;
+
     return (
         <>
             <Head title="Log in" />
@@ -30,6 +32,8 @@ export default function Login({ status, canResetPassword }: Props) {
             >
                 {({ processing, errors }) => (
                     <>
+                        <input type="hidden" name="_token" value={csrf_token} />
+
                         <div className="grid gap-6">
                             <div className="grid gap-2">
                                 <Label htmlFor="email">Email address</Label>
