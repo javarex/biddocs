@@ -25,7 +25,9 @@ class ProjectBidDocumentController extends Controller
                 'items_count' => $project->items()->count(),
                 'total_cost' => (float) $project->items()->sum('total_cost'),
             ],
-            'documentUrl' => route('admin.projects.bid-docs.document', $project),
+            // Keep this URL relative so the browser preserves the current HTTPS
+            // scheme even when the app is behind a reverse proxy.
+            'documentUrl' => route('admin.projects.bid-docs.document', $project, false),
         ]);
     }
 
