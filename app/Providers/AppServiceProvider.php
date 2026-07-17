@@ -54,6 +54,7 @@ class AppServiceProvider extends ServiceProvider
             'projects.view',
             'projects.import',
             'projects.bid_docs.view',
+            'projects.delete',
         ] as $ability) {
             Gate::define($ability, fn (User $user): bool => $user->hasPermissionTo($ability));
         }

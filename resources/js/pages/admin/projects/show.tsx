@@ -1,5 +1,6 @@
-import { Head, Link } from '@inertiajs/react';
-import { ArrowLeft, FileText, Import } from 'lucide-react';
+import { Head, Link, router } from '@inertiajs/react';
+import { ArrowLeft, FileText, Import, Trash2 } from 'lucide-react';
+import ConfirmDialog from '@/components/confirm-dialog';
 import EmptyState from '@/components/empty-state';
 import PageHeader from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -87,6 +88,21 @@ export default function ProjectsShow({ project }: Props) {
                                     <Import /> Import / Update
                                 </Link>
                             </Button>
+                            <ConfirmDialog
+                                title="Delete project?"
+                                description="This will permanently delete the project and its imported sections and items."
+                                confirmLabel="Delete"
+                                destructive
+                                onConfirm={() =>
+                                    router.delete(
+                                        `/admin/projects/${project.id}`,
+                                    )
+                                }
+                            >
+                                <Button variant="destructive">
+                                    <Trash2 /> Delete project
+                                </Button>
+                            </ConfirmDialog>
                         </div>
                     }
                 />

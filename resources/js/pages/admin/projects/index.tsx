@@ -1,5 +1,6 @@
-import { Head, Link, useForm } from '@inertiajs/react';
-import { Eye, FileText, FolderKanban, Import, Search } from 'lucide-react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
+import { Eye, FileText, FolderKanban, Import, Search, Trash2 } from 'lucide-react';
+import ConfirmDialog from '@/components/confirm-dialog';
 import DataTable from '@/components/data-table';
 import EmptyState from '@/components/empty-state';
 import PageHeader from '@/components/page-header';
@@ -143,6 +144,25 @@ export default function ProjectsIndex({ projects, filters }: Props) {
                                                     <Import /> Import / Update
                                                 </Link>
                                             </Button>
+                                            <ConfirmDialog
+                                                title="Delete project?"
+                                                description="This will permanently delete the project and its imported sections and items."
+                                                confirmLabel="Delete"
+                                                destructive
+                                                onConfirm={() =>
+                                                    router.delete(
+                                                        `/admin/projects/${project.id}`,
+                                                    )
+                                                }
+                                            >
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    aria-label={`Delete ${project.project_name}`}
+                                                >
+                                                    <Trash2 className="size-4 text-destructive" />
+                                                </Button>
+                                            </ConfirmDialog>
                                         </div>
                                     </td>
                                 </tr>

@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\ProjectItem;
 use App\Models\Section;
 use App\Models\SubSection;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -82,5 +83,14 @@ class ProjectController extends Controller
                 ])->values()->all(),
             ],
         ]);
+    }
+
+    public function destroy(Project $project): RedirectResponse
+    {
+        Gate::authorize('projects.delete');
+
+        $project->delete();
+
+        return to_route('admin.projects.index')->with('success', 'Project deleted successfully.');
     }
 }

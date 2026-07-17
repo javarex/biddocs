@@ -33,6 +33,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::resource('roles', RoleController::class)->except(['show']);
         Route::get('projects', [ProjectController::class, 'index'])->name('projects.index');
         Route::get('projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
+        Route::delete('projects/{project}', [ProjectController::class, 'destroy'])->name('projects.destroy');
         Route::get('projects/{project}/bid-docs', [ProjectBidDocumentController::class, 'show'])->name('projects.bid-docs.show');
         Route::get('projects/{project}/bid-docs/document', [ProjectBidDocumentController::class, 'document'])->name('projects.bid-docs.document');
         Route::get('projects/{project}/import', [ImportController::class, 'projectImport'])->name('projects.import');
