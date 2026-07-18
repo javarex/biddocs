@@ -1,7 +1,17 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { renderAsync } from 'docx-preview';
-import { Download, FileText, Import, Printer } from 'lucide-react';
+import {
+    Download,
+    FileText,
+    Import,
+    Pencil,
+    Printer,
+    RotateCcw,
+    Save,
+    X,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import ConfirmDialog from '@/components/confirm-dialog';
 import PageHeader from '@/components/page-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -26,6 +36,15 @@ type Props = {
         total_cost: number;
     };
     documentUrl: string;
+    editor: {
+        can_edit: boolean;
+        has_saved_version: boolean;
+        revision: number;
+        edited_at: string | null;
+        edited_by: { id: number; name: string } | null;
+        save_url: string;
+        reset_url: string;
+    };
 };
 
 const currency = new Intl.NumberFormat('en-PH', {
@@ -33,12 +52,38 @@ const currency = new Intl.NumberFormat('en-PH', {
     currency: 'PHP',
 });
 
-export default function ProjectBidDocuments({ project, documentUrl }: Props) {
+function editableParagraphText(paragraph: HTMLElement): string {
+    const clone = paragraph.cloneNode(true) as HTMLElement;
+
+    clone.querySelectorAll('span[id^="BDS_EDIT_"]').forEach((marker) => {
+        marker.remove();
+    });
+    clone.querySelectorAll('.bid-docx-tab-stop').forEach((tab) => {
+        tab.replaceWith(document.createTextNode('\t'));
+    });
+
+    return clone.textContent ?? '';
+}
+
+export default function ProjectBidDocuments({
+    project,
+    documentUrl,
+    editor,
+}: Props) {
     const documentContainer = useRef<HTMLDivElement>(null);
     const styleContainer = useRef<HTMLDivElement>(null);
+    const originalParagraphs = useRef(
+        new Map<string, { html: string; text: string }>(),
+    );
+    const dirtyEdits = useRef<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [printError, setPrintError] = useState<string | null>(null);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const [editing, setEditing] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [dirtyCount, setDirtyCount] = useState(0);
+    const [editableParagraphCount, setEditableParagraphCount] = useState(0);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -85,6 +130,42 @@ export default function ProjectBidDocuments({ project, documentUrl }: Props) {
                         experimental: true,
                     },
                 );
+
+                const indexedParagraphs = new Map<
+                    string,
+                    { html: string; text: string }
+                >();
+                const markers = documentContainer.current.querySelectorAll(
+                    'span[id^="BDS_EDIT_"]',
+                );
+
+                markers.forEach((marker) => {
+                    const paragraph = marker.closest('p');
+
+                    if (!(paragraph instanceof HTMLParagraphElement)) {
+                        return;
+                    }
+
+                    const key = marker.id;
+                    paragraph.dataset.bidDocEditKey = key;
+                    paragraph.contentEditable = 'false';
+                    paragraph.spellcheck = true;
+                    marker.setAttribute('contenteditable', 'false');
+                    paragraph
+                        .querySelectorAll('.bid-docx-tab-stop')
+                        .forEach((tab) => {
+                            tab.setAttribute('contenteditable', 'false');
+                        });
+                    indexedParagraphs.set(key, {
+                        html: paragraph.innerHTML,
+                        text: editableParagraphText(paragraph),
+                    });
+                });
+
+                originalParagraphs.current = indexedParagraphs;
+                dirtyEdits.current = {};
+                setDirtyCount(0);
+                setEditableParagraphCount(indexedParagraphs.size);
             } catch (exception) {
                 if (
                     exception instanceof DOMException &&
@@ -107,6 +188,154 @@ export default function ProjectBidDocuments({ project, documentUrl }: Props) {
 
         return () => controller.abort();
     }, [documentUrl]);
+
+    useEffect(() => {
+        const container = documentContainer.current;
+
+        if (!container) {
+            return;
+        }
+
+        container
+            .querySelectorAll<HTMLElement>('p[data-bid-doc-edit-key]')
+            .forEach((paragraph) => {
+                paragraph.contentEditable = editing ? 'true' : 'false';
+            });
+    }, [editing, editableParagraphCount]);
+
+    const updateDirtyParagraph = (paragraph: HTMLElement) => {
+        const key = paragraph.dataset.bidDocEditKey;
+
+        if (!key) {
+            return;
+        }
+
+        const value = editableParagraphText(paragraph);
+
+        if (value === originalParagraphs.current.get(key)?.text) {
+            delete dirtyEdits.current[key];
+        } else {
+            dirtyEdits.current[key] = value;
+        }
+
+        setDirtyCount(Object.keys(dirtyEdits.current).length);
+    };
+
+    const handleDocumentInput = (event: React.FormEvent<HTMLDivElement>) => {
+        if (!editing) {
+            return;
+        }
+
+        const paragraph = (event.target as HTMLElement).closest<HTMLElement>(
+            'p[data-bid-doc-edit-key]',
+        );
+
+        if (paragraph) {
+            updateDirtyParagraph(paragraph);
+        }
+    };
+
+    const handleDocumentKeyDown = (
+        event: React.KeyboardEvent<HTMLDivElement>,
+    ) => {
+        if (editing && event.key === 'Enter') {
+            event.preventDefault();
+        }
+    };
+
+    const handleDocumentPaste = (
+        event: React.ClipboardEvent<HTMLDivElement>,
+    ) => {
+        if (!editing) {
+            return;
+        }
+
+        const paragraph = (event.target as HTMLElement).closest<HTMLElement>(
+            'p[data-bid-doc-edit-key]',
+        );
+
+        if (!paragraph) {
+            return;
+        }
+
+        event.preventDefault();
+        const text = event.clipboardData
+            .getData('text/plain')
+            .replace(/\s*\r?\n\s*/g, ' ');
+        const selection = window.getSelection();
+
+        if (!selection || selection.rangeCount === 0) {
+            return;
+        }
+
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        range.insertNode(document.createTextNode(text));
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        updateDirtyParagraph(paragraph);
+    };
+
+    const startEditing = () => {
+        setSaveError(null);
+        dirtyEdits.current = {};
+        setDirtyCount(0);
+        setEditing(true);
+    };
+
+    const cancelEditing = () => {
+        const container = documentContainer.current;
+        originalParagraphs.current.forEach((original, key) => {
+            const paragraph = container?.querySelector<HTMLElement>(
+                `p[data-bid-doc-edit-key="${key}"]`,
+            );
+
+            if (paragraph) {
+                paragraph.innerHTML = original.html;
+            }
+        });
+        dirtyEdits.current = {};
+        setDirtyCount(0);
+        setSaveError(null);
+        setEditing(false);
+    };
+
+    const saveDocument = () => {
+        if (dirtyCount === 0) {
+            setEditing(false);
+
+            return;
+        }
+
+        router.put(
+            editor.save_url,
+            {
+                revision: editor.revision,
+                edits: dirtyEdits.current,
+            },
+            {
+                preserveScroll: true,
+                onStart: () => {
+                    setSaving(true);
+                    setSaveError(null);
+                },
+                onError: (errors) => {
+                    setSaveError(
+                        errors.document ??
+                            errors.edits ??
+                            'The bid document changes could not be saved.',
+                    );
+                },
+                onSuccess: () => {
+                    dirtyEdits.current = {};
+                    setDirtyCount(0);
+                    setEditing(false);
+                },
+                onFinish: () => setSaving(false),
+            },
+        );
+    };
 
     const printDocument = () => {
         if (!documentContainer.current || !styleContainer.current) {
@@ -209,24 +438,80 @@ export default function ProjectBidDocuments({ project, documentUrl }: Props) {
                     backHref={`/admin/projects/${project.id}`}
                     action={
                         <div className="flex flex-wrap gap-2 print:hidden">
-                            <Button asChild variant="outline">
-                                <Link
-                                    href={`/admin/projects/${project.id}/import`}
-                                >
-                                    <Import /> Import / Update
-                                </Link>
-                            </Button>
-                            <Button asChild variant="outline">
-                                <a href={documentUrl} download>
-                                    <Download /> Download DOCX
-                                </a>
-                            </Button>
-                            <Button
-                                disabled={loading || error !== null}
-                                onClick={printDocument}
-                            >
-                                <Printer /> Print
-                            </Button>
+                            {editing ? (
+                                <>
+                                    <Button
+                                        variant="outline"
+                                        disabled={saving}
+                                        onClick={cancelEditing}
+                                    >
+                                        <X /> Cancel
+                                    </Button>
+                                    <Button
+                                        disabled={saving || dirtyCount === 0}
+                                        onClick={saveDocument}
+                                    >
+                                        {saving ? <Spinner /> : <Save />}
+                                        Save changes
+                                        {dirtyCount > 0 && ` (${dirtyCount})`}
+                                    </Button>
+                                </>
+                            ) : (
+                                <>
+                                    {editor.can_edit && (
+                                        <Button
+                                            variant="outline"
+                                            disabled={
+                                                loading ||
+                                                error !== null ||
+                                                editableParagraphCount === 0
+                                            }
+                                            onClick={startEditing}
+                                        >
+                                            <Pencil /> Edit document
+                                        </Button>
+                                    )}
+                                    {editor.can_edit &&
+                                        editor.has_saved_version && (
+                                            <ConfirmDialog
+                                                title="Reset bid document?"
+                                                description="This removes all direct document edits and regenerates the document from the current project and BOQ data."
+                                                confirmLabel="Reset document"
+                                                destructive
+                                                onConfirm={() =>
+                                                    router.delete(
+                                                        editor.reset_url,
+                                                        {
+                                                            preserveScroll: true,
+                                                        },
+                                                    )
+                                                }
+                                            >
+                                                <Button variant="outline">
+                                                    <RotateCcw /> Reset edits
+                                                </Button>
+                                            </ConfirmDialog>
+                                        )}
+                                    <Button asChild variant="outline">
+                                        <Link
+                                            href={`/admin/projects/${project.id}/import`}
+                                        >
+                                            <Import /> Import / Update
+                                        </Link>
+                                    </Button>
+                                    <Button asChild variant="outline">
+                                        <a href={documentUrl} download>
+                                            <Download /> Download DOCX
+                                        </a>
+                                    </Button>
+                                    <Button
+                                        disabled={loading || error !== null}
+                                        onClick={printDocument}
+                                    >
+                                        <Printer /> Print
+                                    </Button>
+                                </>
+                            )}
                         </div>
                     }
                 />
@@ -268,14 +553,63 @@ export default function ProjectBidDocuments({ project, documentUrl }: Props) {
 
                 <Alert className="print:hidden">
                     <FileText />
-                    <AlertTitle>Dynamic Word document</AlertTitle>
+                    <AlertTitle>
+                        {editing
+                            ? 'Document editing is active'
+                            : editor.has_saved_version
+                              ? 'Saved editable Word document'
+                              : 'Dynamic Word document'}
+                    </AlertTitle>
                     <AlertDescription>
-                        The original 107-page DOCX supplies the page design,
-                        static text, headers, footers, images, and formatting.
-                        Project identity, location, duration, budget, and Bill
-                        of Quantities are generated from this project.
+                        {editing ? (
+                            <>
+                                Click any highlighted paragraph or table cell to
+                                edit its text. Save changes when finished. New
+                                paragraphs and formatting changes are not
+                                supported in this editor.
+                            </>
+                        ) : (
+                            <>
+                                The original 107-page DOCX supplies the page
+                                design, headers, footers, images, and
+                                formatting. Project identity, location,
+                                duration, budget, and Bill of Quantities are
+                                generated from this project.
+                                {editor.has_saved_version &&
+                                    editor.edited_at && (
+                                        <span className="mt-1 block">
+                                            Last edited by{' '}
+                                            {editor.edited_by?.name ??
+                                                'a system user'}{' '}
+                                            on{' '}
+                                            {new Intl.DateTimeFormat('en-PH', {
+                                                dateStyle: 'medium',
+                                                timeStyle: 'short',
+                                            }).format(
+                                                new Date(editor.edited_at),
+                                            )}
+                                            .
+                                        </span>
+                                    )}
+                                {editor.has_saved_version && (
+                                    <span className="mt-1 block">
+                                        This saved version is used for preview
+                                        and download. After importing newer
+                                        project or BOQ data, use Reset edits to
+                                        regenerate the document from that data.
+                                    </span>
+                                )}
+                            </>
+                        )}
                     </AlertDescription>
                 </Alert>
+
+                {saveError && (
+                    <Alert variant="destructive" className="print:hidden">
+                        <AlertTitle>Unable to save document</AlertTitle>
+                        <AlertDescription>{saveError}</AlertDescription>
+                    </Alert>
+                )}
 
                 {printError && (
                     <Alert variant="destructive" className="print:hidden">
@@ -306,8 +640,13 @@ export default function ProjectBidDocuments({ project, documentUrl }: Props) {
                         <div
                             id="bid-doc-renderer"
                             ref={documentContainer}
+                            onInput={handleDocumentInput}
+                            onKeyDown={handleDocumentKeyDown}
+                            onPaste={handleDocumentPaste}
                             className={
-                                loading || error ? 'hidden' : 'bid-doc-renderer'
+                                loading || error
+                                    ? 'hidden'
+                                    : `bid-doc-renderer ${editing ? 'bid-doc-editor-active' : ''}`
                             }
                         />
                     </CardContent>

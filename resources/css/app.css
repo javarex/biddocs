@@ -185,6 +185,30 @@
     box-shadow: 0 8px 24px rgb(15 23 42 / 16%);
 }
 
+.bid-doc-editor-active p[data-bid-doc-edit-key] {
+    cursor: text;
+    outline: 1px dashed transparent;
+    outline-offset: 2px;
+    transition:
+        outline-color 120ms ease,
+        background-color 120ms ease;
+}
+
+.bid-doc-editor-active p[data-bid-doc-edit-key]:hover {
+    background-color: rgb(254 249 195 / 55%);
+    outline-color: rgb(202 138 4 / 55%);
+}
+
+.bid-doc-editor-active p[data-bid-doc-edit-key]:focus {
+    background-color: rgb(254 240 138 / 70%);
+    outline: 2px solid rgb(202 138 4 / 75%);
+}
+
+.dark .bid-doc-editor-active p[data-bid-doc-edit-key]:hover,
+.dark .bid-doc-editor-active p[data-bid-doc-edit-key]:focus {
+    color: black;
+}
+
 @media print {
     html,
     body {

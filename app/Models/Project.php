@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Project extends Model
 {
@@ -22,5 +23,11 @@ class Project extends Model
     public function items(): HasManyThrough
     {
         return $this->hasManyThrough(ProjectItem::class, Section::class);
+    }
+
+    /** @return HasOne<BidDocumentVersion, $this> */
+    public function bidDocumentVersion(): HasOne
+    {
+        return $this->hasOne(BidDocumentVersion::class);
     }
 }

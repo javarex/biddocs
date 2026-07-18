@@ -28,6 +28,7 @@ class AuthorizationSeeder extends Seeder
             ['name' => 'View projects', 'slug' => 'projects.view', 'group' => 'Projects'],
             ['name' => 'Import project data', 'slug' => 'projects.import', 'group' => 'Projects'],
             ['name' => 'View project bid documents', 'slug' => 'projects.bid_docs.view', 'group' => 'Projects'],
+            ['name' => 'Edit project bid documents', 'slug' => 'projects.bid_docs.edit', 'group' => 'Projects'],
             ['name' => 'Delete projects', 'slug' => 'projects.delete', 'group' => 'Projects'],
         ];
 

@@ -17,6 +17,8 @@ class BidDocumentService
 {
     private const WORD_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
+    private const EDIT_BOOKMARK_PREFIX = 'BDS_EDIT_';
+
     public function generate(Project $project): string
     {
         $template = (string) config('bid-documents.template');
@@ -67,11 +69,63 @@ class BidDocumentService
                 $this->replaceProjectContent($document, $project);
                 if ($name === 'word/document.xml') {
                     $this->replaceBillOfQuantities($document, $project);
+                    $this->addEditableMarkers($document);
                 }
                 $archive->addFromString($name, $document->saveXML() ?: $xml);
             }
         } finally {
             $archive->close();
+        }
+
+        return $output;
+    }
+
+    /**
+     * @param  array<string, string>  $edits
+     */
+    public function applyTextEdits(Project $project, array $edits, ?string $source = null): string
+    {
+        $output = $source !== null && is_file($source)
+            ? $this->copyToTemporaryDocument($source)
+            : $this->generate($project);
+
+        $archive = new ZipArchive;
+        if ($archive->open($output) !== true) {
+            throw new RuntimeException('Unable to open the editable bid document.');
+        }
+
+        try {
+            $xml = $archive->getFromName('word/document.xml');
+            if (! is_string($xml)) {
+                throw new RuntimeException('The bid document body is unavailable.');
+            }
+
+            $document = $this->loadXml($xml);
+            $this->repairFlattenedTableOfContents($document);
+            $updated = $this->applyEditableParagraphs($document, $edits);
+            if ($updated !== count($edits)) {
+                throw new RuntimeException('The bid document changed before these edits could be saved. Reload it and try again.');
+            }
+
+            $archive->addFromString('word/document.xml', $document->saveXML() ?: $xml);
+        } finally {
+            $archive->close();
+        }
+
+        return $output;
+    }
+
+    private function copyToTemporaryDocument(string $source): string
+    {
+        $temporary = tempnam(storage_path('app/private'), 'bid-doc-edit-');
+        if ($temporary === false) {
+            throw new RuntimeException('Unable to create the edited bid document.');
+        }
+
+        $output = $temporary.'.docx';
+        rename($temporary, $output);
+        if (! copy($source, $output)) {
+            throw new RuntimeException('Unable to copy the editable bid document.');
         }
 
         return $output;
@@ -250,6 +304,227 @@ class BidDocumentService
             }
         }
         $table->insertBefore($row, $before);
+    }
+
+    private function addEditableMarkers(DOMDocument $document): void
+    {
+        $xpath = $this->xpath($document);
+        $paragraphs = iterator_to_array($xpath->query('//w:p[.//w:t]') ?: []);
+        $bookmarkId = 0;
+
+        foreach ($xpath->query('//w:bookmarkStart/@w:id') ?: [] as $id) {
+            $bookmarkId = max($bookmarkId, (int) $id->nodeValue);
+        }
+
+        foreach ($paragraphs as $index => $paragraph) {
+            if (! $paragraph instanceof DOMElement) {
+                continue;
+            }
+
+            $id = (string) ++$bookmarkId;
+            $name = self::EDIT_BOOKMARK_PREFIX.($index + 1);
+            $start = $document->createElementNS(self::WORD_NAMESPACE, 'w:bookmarkStart');
+            $start->setAttributeNS(self::WORD_NAMESPACE, 'w:id', $id);
+            $start->setAttributeNS(self::WORD_NAMESPACE, 'w:name', $name);
+            $end = $document->createElementNS(self::WORD_NAMESPACE, 'w:bookmarkEnd');
+            $end->setAttributeNS(self::WORD_NAMESPACE, 'w:id', $id);
+
+            $firstContent = $paragraph->firstChild;
+            while ($firstContent !== null
+                && (! $firstContent instanceof DOMElement || $firstContent->namespaceURI !== self::WORD_NAMESPACE || $firstContent->localName === 'pPr')) {
+                $firstContent = $firstContent->nextSibling;
+            }
+
+            if ($firstContent !== null) {
+                $paragraph->insertBefore($start, $firstContent);
+            } else {
+                $paragraph->appendChild($start);
+            }
+            $paragraph->appendChild($end);
+        }
+    }
+
+    /**
+     * @param  array<string, string>  $edits
+     */
+    private function applyEditableParagraphs(DOMDocument $document, array $edits): int
+    {
+        $xpath = $this->xpath($document);
+        $updated = 0;
+
+        foreach ($edits as $bookmark => $value) {
+            $query = sprintf(
+                '//w:bookmarkStart[@w:name="%s"]',
+                $bookmark,
+            );
+            $markers = $xpath->query($query);
+            if ($markers === false) {
+                continue;
+            }
+            $marker = $markers->item(0);
+            $paragraph = $marker?->parentNode;
+
+            if (! $paragraph instanceof DOMElement || $paragraph->localName !== 'p') {
+                continue;
+            }
+
+            $this->setEditableParagraphText($xpath, $paragraph, $value);
+            $updated++;
+        }
+
+        return $updated;
+    }
+
+    private function setEditableParagraphText(DOMXPath $xpath, DOMElement $paragraph, string $value): void
+    {
+        $groups = $this->paragraphTextGroups($xpath, $paragraph);
+
+        if (count($groups) === 1) {
+            $this->setTextNodesPreservingRuns($groups[0], $value);
+
+            return;
+        }
+
+        $normalized = str_replace(["\u{2002}", "\u{2003}"], "\t", $value);
+        $values = explode("\t", $normalized);
+
+        if (count($values) !== count($groups)) {
+            throw new RuntimeException('Tabs and table-of-contents leaders cannot be removed. Reload the document and edit only its text.');
+        }
+
+        foreach ($groups as $index => $nodes) {
+            $this->setTextNodesPreservingRuns($nodes, $values[$index]);
+        }
+    }
+
+    /**
+     * @return array<int, array<int, DOMNode>>
+     */
+    private function paragraphTextGroups(DOMXPath $xpath, DOMElement $paragraph): array
+    {
+        $groups = [[]];
+        $group = 0;
+
+        foreach ($xpath->query('.//w:t | .//w:tab[not(ancestor::w:pPr)]', $paragraph) ?: [] as $node) {
+            if ($node instanceof DOMElement && $node->localName === 'tab') {
+                $group++;
+                $groups[$group] = [];
+
+                continue;
+            }
+
+            if ($node instanceof DOMNode && $node->localName === 't') {
+                $groups[$group][] = $node;
+            }
+        }
+
+        return $groups;
+    }
+
+    /**
+     * @param  array<int, DOMNode>  $textNodes
+     */
+    private function setTextNodesPreservingRuns(array $textNodes, string $value): void
+    {
+        if ($textNodes === []) {
+            if ($value !== '') {
+                throw new RuntimeException('This part of the Word document cannot be edited without changing its structure.');
+            }
+
+            return;
+        }
+
+        $original = implode('', array_map(fn (DOMNode $node): string => $node->nodeValue ?? '', $textNodes));
+        if ($original === $value) {
+            return;
+        }
+
+        $originalLength = mb_strlen($original);
+        $valueLength = mb_strlen($value);
+        $prefix = 0;
+
+        while ($prefix < $originalLength
+            && $prefix < $valueLength
+            && mb_substr($original, $prefix, 1) === mb_substr($value, $prefix, 1)) {
+            $prefix++;
+        }
+
+        $suffix = 0;
+        while ($suffix < $originalLength - $prefix
+            && $suffix < $valueLength - $prefix
+            && mb_substr($original, $originalLength - $suffix - 1, 1) === mb_substr($value, $valueLength - $suffix - 1, 1)) {
+            $suffix++;
+        }
+
+        $changeEnd = $originalLength - $suffix;
+        $replacement = mb_substr($value, $prefix, $valueLength - $prefix - $suffix);
+        $offset = 0;
+        $target = count($textNodes) - 1;
+
+        foreach ($textNodes as $index => $textNode) {
+            $length = mb_strlen($textNode->nodeValue ?? '');
+            if ($prefix < $offset + $length || ($prefix === $offset && $length > 0)) {
+                $target = $index;
+
+                break;
+            }
+            $offset += $length;
+        }
+
+        $offset = 0;
+        foreach ($textNodes as $index => $textNode) {
+            $text = $textNode->nodeValue ?? '';
+            $length = mb_strlen($text);
+            $end = $offset + $length;
+            $beforeLength = max(0, min($end, $prefix) - $offset);
+            $afterStart = max($offset, $changeEnd);
+            $updated = $beforeLength > 0 ? mb_substr($text, 0, $beforeLength) : '';
+
+            if ($index === $target) {
+                $updated .= $replacement;
+            }
+            if ($end > $afterStart) {
+                $updated .= mb_substr($text, $afterStart - $offset);
+            }
+
+            $textNode->nodeValue = $updated;
+            if ($textNode instanceof DOMElement) {
+                $textNode->setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+            }
+            $offset = $end;
+        }
+    }
+
+    private function repairFlattenedTableOfContents(DOMDocument $document): void
+    {
+        $xpath = $this->xpath($document);
+
+        foreach ($xpath->query('//w:p[w:pPr/w:pStyle[starts-with(@w:val, "TOC")]]') ?: [] as $paragraph) {
+            if (! $paragraph instanceof DOMElement) {
+                continue;
+            }
+
+            $groups = $this->paragraphTextGroups($xpath, $paragraph);
+            if (count($groups) < 2) {
+                continue;
+            }
+
+            $textNodes = array_merge(...$groups);
+            $first = $textNodes[0] ?? null;
+            if (! $first instanceof DOMNode || collect(array_slice($textNodes, 1))->contains(fn (DOMNode $node): bool => trim($node->nodeValue ?? '') !== '')) {
+                continue;
+            }
+
+            $flattened = $first->nodeValue ?? '';
+            $parts = preg_split('/[\x{00A0}\x{2002}\x{2003}\t]+/u', $flattened);
+            if (! is_array($parts) || count($parts) !== count($groups)) {
+                continue;
+            }
+
+            foreach ($groups as $index => $nodes) {
+                $this->setTextNodesPreservingRuns($nodes, $parts[$index]);
+            }
+        }
     }
 
     private function xpath(DOMDocument $document): DOMXPath

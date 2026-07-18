@@ -36,6 +36,8 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::delete('projects/{project}', [ProjectController::class, 'destroy'])->name('projects.destroy');
         Route::get('projects/{project}/bid-docs', [ProjectBidDocumentController::class, 'show'])->name('projects.bid-docs.show');
         Route::get('projects/{project}/bid-docs/document', [ProjectBidDocumentController::class, 'document'])->name('projects.bid-docs.document');
+        Route::put('projects/{project}/bid-docs', [ProjectBidDocumentController::class, 'update'])->name('projects.bid-docs.update');
+        Route::delete('projects/{project}/bid-docs', [ProjectBidDocumentController::class, 'destroy'])->name('projects.bid-docs.destroy');
         Route::get('projects/{project}/import', [ImportController::class, 'projectImport'])->name('projects.import');
         Route::post('projects/{project}/import/preview', [ImportController::class, 'previewForProject'])->name('projects.import.preview');
         Route::get('settings', SystemSettingsController::class)->name('settings');
