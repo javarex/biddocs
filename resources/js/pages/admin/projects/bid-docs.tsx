@@ -437,7 +437,13 @@ export default function ProjectBidDocuments({
                     description={`${project.project_code} · ${project.project_name}`}
                     backHref={`/admin/projects/${project.id}`}
                     action={
-                        <div className="flex flex-wrap gap-2 print:hidden">
+                        <div
+                            className={
+                                editing
+                                    ? 'fixed right-4 bottom-4 left-4 z-40 flex justify-end gap-2 rounded-lg border bg-background/95 p-3 shadow-xl backdrop-blur-sm sm:left-auto print:hidden'
+                                    : 'flex flex-wrap gap-2 print:hidden'
+                            }
+                        >
                             {editing ? (
                                 <>
                                     <Button
