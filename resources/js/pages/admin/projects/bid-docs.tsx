@@ -48,6 +48,13 @@ type Props = {
     };
 };
 
+type TableOfContentsEntry = {
+    bookmark: string;
+    label: string;
+    level: number;
+    pageNumber: string | null;
+};
+
 const currency = new Intl.NumberFormat('en-PH', {
     style: 'currency',
     currency: 'PHP',
@@ -87,6 +94,9 @@ export default function ProjectBidDocuments({
     const [dirtyCount, setDirtyCount] = useState(0);
     const [editableParagraphCount, setEditableParagraphCount] = useState(0);
     const [hasTableOfContentsPage, setHasTableOfContentsPage] = useState(false);
+    const [tableOfContents, setTableOfContents] = useState<
+        TableOfContentsEntry[]
+    >([]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -97,6 +107,7 @@ export default function ProjectBidDocuments({
                 setError(null);
                 tableOfContentsPage.current = null;
                 setHasTableOfContentsPage(false);
+                setTableOfContents([]);
                 const response = await fetch(documentUrl, {
                     credentials: 'same-origin',
                     signal: controller.signal,
@@ -153,6 +164,70 @@ export default function ProjectBidDocuments({
                         ),
                     ) ?? null;
                 setHasTableOfContentsPage(tableOfContentsPage.current !== null);
+
+                const contentsLinks = Array.from(
+                    tableOfContentsPage.current?.querySelectorAll<HTMLAnchorElement>(
+                        'a[href^="#"]',
+                    ) ?? [],
+                );
+                const minimumLeft =
+                    contentsLinks.length > 0
+                        ? Math.min(
+                              ...contentsLinks.map(
+                                  (link) => link.getBoundingClientRect().left,
+                              ),
+                          )
+                        : 0;
+                const includedBookmarks = new Set<string>();
+                const tableOfContentsEntries =
+                    contentsLinks.flatMap<TableOfContentsEntry>((link) => {
+                        const target = link.getAttribute('href');
+                        const label = link.textContent?.trim();
+
+                        if (!target || target === '#' || !label) {
+                            return [];
+                        }
+
+                        const bookmark = target.slice(1);
+
+                        if (includedBookmarks.has(bookmark)) {
+                            return [];
+                        }
+
+                        const destination =
+                            documentContainer.current?.querySelector(
+                                `[id="${CSS.escape(bookmark)}"]`,
+                            );
+
+                        if (!destination) {
+                            return [];
+                        }
+
+                        includedBookmarks.add(bookmark);
+                        const paragraph = link.closest('p');
+                        const remainingText = (paragraph?.textContent ?? '')
+                            .replace(link.textContent ?? '', '')
+                            .trim();
+
+                        return [
+                            {
+                                bookmark,
+                                label,
+                                pageNumber:
+                                    remainingText.match(/(\d+)\s*$/)?.[1] ??
+                                    null,
+                                level: Math.max(
+                                    0,
+                                    Math.round(
+                                        (link.getBoundingClientRect().left -
+                                            minimumLeft) /
+                                            40,
+                                    ),
+                                ),
+                            },
+                        ];
+                    });
+                setTableOfContents(tableOfContentsEntries);
 
                 const indexedParagraphs = new Map<
                     string,
@@ -305,6 +380,15 @@ export default function ProjectBidDocuments({
             behavior: 'smooth',
             block: 'start',
         });
+    };
+
+    const navigateToDocumentBookmark = (bookmark: string) => {
+        const target = Array.from(
+            documentContainer.current?.querySelectorAll<HTMLElement>('[id]') ??
+                [],
+        ).find((element) => element.id === bookmark);
+
+        target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
     const startEditing = () => {
@@ -689,17 +773,59 @@ export default function ProjectBidDocuments({
                 </Card>
 
                 {hasTableOfContentsPage && (
-                    <Button
-                        type="button"
-                        onClick={navigateToTableOfContentsPage}
-                        className={`fixed right-4 z-40 shadow-lg print:hidden ${
-                            editing ? 'bottom-24' : 'bottom-4'
-                        }`}
-                        aria-label="Go to Table of Content"
-                    >
-                        <BookOpen />
-                        Go to Table of Content
-                    </Button>
+                    <>
+                        {tableOfContents.length > 0 && (
+                            <Card
+                                className={`fixed right-4 left-4 z-40 flex max-h-[60vh] flex-col shadow-xl sm:left-auto sm:w-96 print:hidden ${
+                                    editing ? 'bottom-36' : 'bottom-16'
+                                }`}
+                            >
+                                <CardHeader className="shrink-0 py-4">
+                                    <CardTitle className="text-base">
+                                        Table of Contents
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="min-h-0 flex-1 overflow-y-auto pb-4">
+                                    <nav aria-label="Table of Contents">
+                                        <ul className="space-y-0.5">
+                                            {tableOfContents.map((entry) => (
+                                                <li key={entry.bookmark}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            navigateToDocumentBookmark(
+                                                                entry.bookmark,
+                                                            )
+                                                        }
+                                                        style={{
+                                                            paddingLeft: `${0.5 + entry.level * 1.5}rem`,
+                                                        }}
+                                                        className="flex w-full items-baseline gap-3 rounded-md py-2 pr-2 text-left text-sm leading-snug font-medium hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                                                    >
+                                                        <span className="min-w-0 flex-1">
+                                                            {entry.label}
+                                                        </span>
+                                                    </button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </nav>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        <Button
+                            type="button"
+                            onClick={navigateToTableOfContentsPage}
+                            className={`fixed right-4 z-40 shadow-lg print:hidden ${
+                                editing ? 'bottom-24' : 'bottom-4'
+                            }`}
+                            aria-label="Go to Table of Content"
+                        >
+                            <BookOpen />
+                            Go to Table of Content
+                        </Button>
+                    </>
                 )}
             </div>
         </>
