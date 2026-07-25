@@ -1,6 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { renderAsync } from 'docx-preview';
 import {
+    BookOpen,
     Download,
     FileText,
     Import,
@@ -72,6 +73,7 @@ export default function ProjectBidDocuments({
 }: Props) {
     const documentContainer = useRef<HTMLDivElement>(null);
     const styleContainer = useRef<HTMLDivElement>(null);
+    const tableOfContentsPage = useRef<HTMLElement | null>(null);
     const originalParagraphs = useRef(
         new Map<string, { html: string; text: string }>(),
     );
@@ -84,6 +86,7 @@ export default function ProjectBidDocuments({
     const [saving, setSaving] = useState(false);
     const [dirtyCount, setDirtyCount] = useState(0);
     const [editableParagraphCount, setEditableParagraphCount] = useState(0);
+    const [hasTableOfContentsPage, setHasTableOfContentsPage] = useState(false);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -92,6 +95,8 @@ export default function ProjectBidDocuments({
             try {
                 setLoading(true);
                 setError(null);
+                tableOfContentsPage.current = null;
+                setHasTableOfContentsPage(false);
                 const response = await fetch(documentUrl, {
                     credentials: 'same-origin',
                     signal: controller.signal,
@@ -130,6 +135,24 @@ export default function ProjectBidDocuments({
                         experimental: true,
                     },
                 );
+
+                const sections = Array.from(
+                    documentContainer.current.querySelectorAll<HTMLElement>(
+                        'section.bid-docx',
+                    ),
+                );
+                tableOfContentsPage.current =
+                    sections.find((section) =>
+                        Array.from(section.querySelectorAll('p')).some(
+                            (paragraph) =>
+                                (paragraph.textContent ?? '')
+                                    .replace(/\s+/g, ' ')
+                                    .trim()
+                                    .toLocaleUpperCase() ===
+                                'TABLE OF CONTENTS',
+                        ),
+                    ) ?? null;
+                setHasTableOfContentsPage(tableOfContentsPage.current !== null);
 
                 const indexedParagraphs = new Map<
                     string,
@@ -275,6 +298,13 @@ export default function ProjectBidDocuments({
         selection.removeAllRanges();
         selection.addRange(range);
         updateDirtyParagraph(paragraph);
+    };
+
+    const navigateToTableOfContentsPage = () => {
+        tableOfContentsPage.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+        });
     };
 
     const startEditing = () => {
@@ -657,6 +687,20 @@ export default function ProjectBidDocuments({
                         />
                     </CardContent>
                 </Card>
+
+                {hasTableOfContentsPage && (
+                    <Button
+                        type="button"
+                        onClick={navigateToTableOfContentsPage}
+                        className={`fixed right-4 z-40 shadow-lg print:hidden ${
+                            editing ? 'bottom-24' : 'bottom-4'
+                        }`}
+                        aria-label="Go to Table of Content"
+                    >
+                        <BookOpen />
+                        Go to Table of Content
+                    </Button>
+                )}
             </div>
         </>
     );
