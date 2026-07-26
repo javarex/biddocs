@@ -1,7 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { renderAsync } from 'docx-preview';
 import {
-    BookOpen,
+    ArrowUp,
     Download,
     FileText,
     Import,
@@ -776,18 +776,18 @@ export default function ProjectBidDocuments({
                     <>
                         {tableOfContents.length > 0 && (
                             <Card
-                                className={`fixed right-4 left-4 z-40 flex max-h-[60vh] flex-col shadow-xl sm:left-auto sm:w-96 print:hidden ${
+                                className={`fixed right-3 left-3 z-40 flex max-h-[50vh] flex-col shadow-xl sm:left-auto sm:w-72 print:hidden ${
                                     editing ? 'bottom-36' : 'bottom-16'
                                 }`}
                             >
-                                <CardHeader className="shrink-0 py-4">
-                                    <CardTitle className="text-base">
+                                <CardHeader className="shrink-0 px-3 py-2">
+                                    <CardTitle className="text-sm">
                                         Table of Contents
                                     </CardTitle>
                                 </CardHeader>
-                                <CardContent className="min-h-0 flex-1 overflow-y-auto pb-4">
+                                <CardContent className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
                                     <nav aria-label="Table of Contents">
-                                        <ul className="space-y-0.5">
+                                        <ul>
                                             {tableOfContents.map((entry) => (
                                                 <li key={entry.bookmark}>
                                                     <button
@@ -798,11 +798,11 @@ export default function ProjectBidDocuments({
                                                             )
                                                         }
                                                         style={{
-                                                            paddingLeft: `${0.5 + entry.level * 1.5}rem`,
+                                                            paddingLeft: `${0.375 + entry.level * 0.75}rem`,
                                                         }}
-                                                        className="flex w-full items-baseline gap-3 rounded-md py-2 pr-2 text-left text-sm leading-snug font-medium hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                                                        className="flex w-full items-baseline rounded-sm py-1 pr-1.5 text-left text-xs leading-tight font-medium hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                                                     >
-                                                        <span className="min-w-0 flex-1">
+                                                        <span className="min-w-0 flex-1 truncate">
                                                             {entry.label}
                                                         </span>
                                                     </button>
@@ -817,12 +817,12 @@ export default function ProjectBidDocuments({
                         <Button
                             type="button"
                             onClick={navigateToTableOfContentsPage}
-                            className={`fixed right-4 z-40 shadow-lg print:hidden ${
+                            className={`fixed left-1/2 z-40 -translate-x-1/2 opacity-70 shadow-lg transition-opacity hover:opacity-100 print:hidden ${
                                 editing ? 'bottom-24' : 'bottom-4'
                             }`}
                             aria-label="Go to Table of Content"
                         >
-                            <BookOpen />
+                            <ArrowUp />
                             Go to Table of Content
                         </Button>
                     </>
