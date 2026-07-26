@@ -1,5 +1,5 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { FileSpreadsheet, Upload, X } from 'lucide-react';
+import { Download, FileSpreadsheet, Upload, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import ConfirmDialog from '@/components/confirm-dialog';
 import DataTable from '@/components/data-table';
@@ -15,6 +15,14 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -83,6 +91,8 @@ export default function ImportsIndex({
 }: Props) {
     const inputRef = useRef<HTMLInputElement>(null);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+    const [templateFilename, setTemplateFilename] = useState('ABC Template');
     const form = useForm<{ file: File | null; mode: string }>({
         file: null,
         mode: 'insert',
@@ -108,6 +118,15 @@ export default function ImportsIndex({
             },
         );
     };
+    const downloadAbcTemplate = (event: React.FormEvent) => {
+        event.preventDefault();
+
+        const filename = templateFilename.trim() || 'ABC Template';
+        window.location.assign(
+            `/admin/imports/templates/abc?filename=${encodeURIComponent(filename)}`,
+        );
+        setTemplateDialogOpen(false);
+    };
 
     return (
         <>
@@ -120,7 +139,72 @@ export default function ImportsIndex({
                             ? `Import additional or updated items into ${targetProject.project_name}.`
                             : 'Preview and import procurement bid documents from .xlsx or .xlsm workbooks.'
                     }
+                    action={
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setTemplateDialogOpen(true)}
+                        >
+                            <Download />
+                            Download ABC Template
+                        </Button>
+                    }
                 />
+
+                <Dialog
+                    open={templateDialogOpen}
+                    onOpenChange={setTemplateDialogOpen}
+                >
+                    <DialogContent>
+                        <form
+                            onSubmit={downloadAbcTemplate}
+                            className="space-y-4"
+                        >
+                            <DialogHeader>
+                                <DialogTitle>Rename ABC template</DialogTitle>
+                                <DialogDescription>
+                                    Enter the filename to use for the downloaded
+                                    template. The .xlsm extension will be added
+                                    automatically.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-2">
+                                <Label htmlFor="abc-template-filename">
+                                    Filename
+                                </Label>
+                                <div className="flex items-center">
+                                    <Input
+                                        id="abc-template-filename"
+                                        value={templateFilename}
+                                        onChange={(event) =>
+                                            setTemplateFilename(
+                                                event.target.value,
+                                            )
+                                        }
+                                        autoFocus
+                                        className="rounded-r-none"
+                                    />
+                                    <span className="flex h-9 items-center rounded-r-md border border-l-0 bg-muted px-3 text-sm text-muted-foreground">
+                                        .xlsm
+                                    </span>
+                                </div>
+                            </div>
+                            <DialogFooter>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => setTemplateDialogOpen(false)}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button type="submit">
+                                    <Download />
+                                    Download
+                                </Button>
+                            </DialogFooter>
+                        </form>
+                    </DialogContent>
+                </Dialog>
 
                 {targetProject && (
                     <Card>

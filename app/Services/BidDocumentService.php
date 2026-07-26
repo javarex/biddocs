@@ -152,6 +152,9 @@ class BidDocumentService
         $total = (float) $project->items()->sum('total_cost');
         $durationWords = $this->numberWords($project->contract_duration);
         $amountWords = $this->currencyWords($total);
+        $projectTitle = $this->projectTitle($project);
+        $description = trim((string) $project->project_description);
+        $sourceOfFunds = trim((string) $project->source_of_funds);
 
         foreach ($xpath->query('//w:p') ?: [] as $paragraph) {
             if (! $paragraph instanceof DOMElement) {
@@ -164,7 +167,7 @@ class BidDocumentService
 
             $updated = preg_replace(
                 '/Construction of\s*1\s*Unit,?\s*1-Storey,?\s*2[\s-]*Classroom\s*School\s*Building\s*at\s*Buhi\s*Elementary\s*School,?\s*Brgy\s*\.?\s*Ampawid\s*,?\s*Laak\s*,?\s*Davao\s*de\s*Oro/i',
-                $project->project_name,
+                $projectTitle,
                 preg_replace('/\s+/u', ' ', trim($text)) ?? $text,
             ) ?? $text;
             $updated = preg_replace(
@@ -178,10 +181,31 @@ class BidDocumentService
                 $updated,
             ) ?? $updated;
             $updated = preg_replace('/CW\d{2}-\s*(?:_+|\d{3})?/i', $project->project_code, $updated) ?? $updated;
-            if (trim((string) $project->project_description) !== '') {
+            if ($description !== '') {
                 $updated = preg_replace(
                     '/Construction\s+(?:of\s+)?2[\s-]*classroom\s+with\s+toilet?\s+attached\s+in\s+each\s+room\s+and\s+bundled\s+school(?:\s+furnitures?)?/i',
-                    $project->project_description,
+                    $description,
+                    $updated,
+                ) ?? $updated;
+                $updated = preg_replace(
+                    '/now\s+invites\s+bids\s+for\s+the\s+above\s+Procurement\s+Project/i',
+                    'now invites bids for '.$description,
+                    $updated,
+                ) ?? $updated;
+            }
+            if (preg_match('/^The\s+Project\s+title\s+is\b/i', $text) === 1
+                && ! Str::contains(Str::lower($updated), 'required completion period')) {
+                $updated = rtrim($updated)." The required completion period is {$durationWords} ({$project->contract_duration}) calendar days.";
+            }
+            if ($sourceOfFunds !== '') {
+                $updated = preg_replace(
+                    '/through\s+the\s+.+?\s+intends\s+to\s+apply\s+the\s+sum\s+of/i',
+                    'through the '.$sourceOfFunds.' intends to apply the sum of',
+                    $updated,
+                ) ?? $updated;
+                $updated = preg_replace(
+                    '/(source\s+of\s+funding\s+as\s+indicated\s+below\s+for)\s+.+?\s+(in\s+the\s+amount\s+of)/i',
+                    '$1 '.$sourceOfFunds.' $2',
                     $updated,
                 ) ?? $updated;
             }
@@ -195,7 +219,56 @@ class BidDocumentService
             if ($updated !== $text) {
                 $this->setNodeText($xpath, $paragraph, $updated);
             }
+
+            if ($description !== '' && preg_match('/^INVITATION\s+TO\s+BID\s+FOR\b/i', $text) === 1) {
+                $this->setInvitationDescription($document, $xpath, $paragraph, $description);
+            }
         }
+    }
+
+    private function projectTitle(Project $project): string
+    {
+        $name = trim($project->project_name);
+        $location = trim($project->location);
+
+        if ($location === '' || Str::contains(Str::lower($name), Str::lower($location))) {
+            return $name;
+        }
+
+        return $name.', '.$location;
+    }
+
+    private function setInvitationDescription(
+        DOMDocument $document,
+        DOMXPath $xpath,
+        DOMElement $title,
+        string $description,
+    ): void {
+        $paragraph = $title->nextSibling;
+        while ($paragraph !== null && ! $paragraph instanceof DOMElement) {
+            $paragraph = $paragraph->nextSibling;
+        }
+
+        if (! $paragraph instanceof DOMElement || $paragraph->localName !== 'p' || $this->nodeText($xpath, $paragraph) !== '') {
+            $paragraph = $document->createElementNS(self::WORD_NAMESPACE, 'w:p');
+            $title->parentNode?->insertBefore($paragraph, $title->nextSibling);
+        }
+
+        $run = $document->createElementNS(self::WORD_NAMESPACE, 'w:r');
+        $titleRunProperties = $xpath->query('./w:r[1]/w:rPr', $title)?->item(0);
+        if ($titleRunProperties instanceof DOMNode) {
+            $runProperties = $document->importNode($titleRunProperties->cloneNode(true), true);
+        } else {
+            $runProperties = $document->createElementNS(self::WORD_NAMESPACE, 'w:rPr');
+        }
+        if ($runProperties instanceof DOMElement && $xpath->query('./w:i', $runProperties)?->length === 0) {
+            $runProperties->appendChild($document->createElementNS(self::WORD_NAMESPACE, 'w:i'));
+        }
+        $run->appendChild($runProperties);
+        $text = $document->createElementNS(self::WORD_NAMESPACE, 'w:t');
+        $text->appendChild($document->createTextNode('('.$description.')'));
+        $run->appendChild($text);
+        $paragraph->appendChild($run);
     }
 
     private function replaceBillOfQuantities(DOMDocument $document, Project $project): void

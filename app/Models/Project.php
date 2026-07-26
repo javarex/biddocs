@@ -11,7 +11,7 @@ class Project extends Model
 {
     public $timestamps = false;
 
-    protected $fillable = ['project_code', 'project_name', 'project_description', 'location', 'contract_duration'];
+    protected $fillable = ['project_code', 'project_name', 'project_description', 'source_of_funds', 'location', 'contract_duration'];
 
     /** @return HasMany<Section, $this> */
     public function sections(): HasMany

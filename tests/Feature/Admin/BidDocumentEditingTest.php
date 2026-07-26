@@ -48,6 +48,14 @@ XML);
                 <w:r><w:fldChar w:fldCharType="end"/></w:r>
             </w:hyperlink>
         </w:p>
+        <w:p><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t>INVITATION TO BID FOR THE CONSTRUCTION OF 1 UNIT, 1-STOREY, 2 CLASSROOM SCHOOL BUILDING AT BUHI ELEMENTARY SCHOOL, BRGY. AMPAWID, LAAK, DAVAO DE ORO</w:t></w:r></w:p>
+        <w:p/>
+        <w:p><w:r><w:t>The Provincial Government of Davao de Oro, through the GAA 2026 Basic Education Facilities Program intends to apply the sum of Seven Million One Hundred Ninety-Four Thousand Five Hundred Nineteen Pesos and Forty-Nine Centavos Only (Php 7,194,519.49) being the Approved Budget for the Contract (ABC).</w:t></w:r></w:p>
+        <w:p><w:r><w:t>The Provincial Government of Davao de Oro now invites bids for the above Procurement Project. Completion of the Works is required One Hundred Sixty (160) calendar days.</w:t></w:r></w:p>
+        <w:p><w:r><w:t>The Project title is Construction of 1 Unit, 1-Storey, 2-Classroom School Building at Buhi Elementary School, Brgy. Ampawid, Laak, Davao de Oro (Construction of 2-classroom with toilet attached in each room and bundled school furniture)- PEO</w:t></w:r></w:p>
+        <w:p><w:r><w:t>The identification number of the Contract is CW25-____.</w:t></w:r></w:p>
+        <w:p><w:r><w:t>2.1 The GOP through the source of funding as indicated below for GAA 2026 Basic Education Facilities Program in the amount of Php 7,194,519.49.</w:t></w:r></w:p>
+        <w:p><w:r><w:t>The ABC is Php 7,194,519.49. Any bid with a financial component exceeding this amount shall not be accepted.</w:t></w:r></w:p>
         <w:p><w:r><w:t>(Construction of 2-classroom with toile attached in each room and bundled school furniture)</w:t></w:r></w:p>
         <w:p><w:r><w:t>Civil Works No. CW25-______</w:t></w:r></w:p>
         <w:sectPr/>
@@ -176,9 +184,16 @@ XML);
 
         $this->assertIsString($xml);
         $this->assertStringContainsString('CW26-001', $xml);
+        $this->assertStringContainsString('Editable Project, Davao de Oro', $xml);
         $this->assertStringContainsString('Construction of a new testing facility', $xml);
+        $this->assertStringContainsString('(Construction of a new testing facility)', $xml);
+        $this->assertStringContainsString('AB CY 2026 – 20% DF', $xml);
+        $this->assertStringContainsString('One Hundred Twenty (120) calendar days', $xml);
+        $this->assertStringContainsString('The required completion period is One Hundred Twenty (120) calendar days.', $xml);
+        $this->assertStringContainsString('The ABC is Php 0.00.', $xml);
         $this->assertStringNotContainsString('CW25-______', $xml);
         $this->assertStringNotContainsString('Construction of 2-classroom', $xml);
+        $this->assertStringNotContainsString('GAA 2026 Basic Education Facilities Program', $xml);
     }
 
     public function test_normal_users_cannot_save_or_reset_direct_document_edits(): void
@@ -201,6 +216,7 @@ XML);
             'project_code' => 'CW26-001',
             'project_name' => 'Editable Project',
             'project_description' => 'Construction of a new testing facility',
+            'source_of_funds' => 'AB CY 2026 – 20% DF',
             'location' => 'Davao de Oro',
             'contract_duration' => 120,
         ]);

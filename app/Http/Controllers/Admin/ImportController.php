@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ImportController extends Controller
@@ -34,6 +35,24 @@ class ImportController extends Controller
         Gate::authorize('imports.create');
 
         return $this->createPreview($request);
+    }
+
+    public function downloadAbcTemplate(Request $request): BinaryFileResponse
+    {
+        Gate::authorize('imports.view');
+
+        $requestedName = pathinfo((string) $request->query('filename', 'ABC Template'), PATHINFO_FILENAME);
+        $filename = trim((string) preg_replace('/[\\\\\/:*?"<>|\x00-\x1F]+/u', '-', $requestedName), ' .-');
+
+        if ($filename === '') {
+            $filename = 'ABC Template';
+        }
+
+        return response()->download(
+            resource_path('templates/abc.xlsm'),
+            $filename.'.xlsm',
+            ['Content-Type' => 'application/vnd.ms-excel.sheet.macroEnabled.12'],
+        );
     }
 
     public function projectImport(Project $project): Response

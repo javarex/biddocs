@@ -42,6 +42,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::post('projects/{project}/import/preview', [ImportController::class, 'previewForProject'])->name('projects.import.preview');
         Route::get('settings', SystemSettingsController::class)->name('settings');
         Route::get('imports', [ImportController::class, 'index'])->name('imports.index');
+        Route::get('imports/templates/abc', [ImportController::class, 'downloadAbcTemplate'])->name('imports.templates.abc');
         Route::post('imports/preview', [ImportController::class, 'preview'])->name('imports.preview');
         Route::post('imports/{importHistory}/commit', [ImportController::class, 'commit'])->name('imports.commit');
         Route::get('imports/{importHistory}/errors', [ImportController::class, 'errors'])->name('imports.errors');

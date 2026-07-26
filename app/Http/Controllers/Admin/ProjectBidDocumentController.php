@@ -28,7 +28,7 @@ class ProjectBidDocumentController extends Controller
 
         return Inertia::render('admin/projects/bid-docs', [
             'project' => [
-                ...$project->only(['id', 'project_code', 'project_name', 'project_description', 'location', 'contract_duration']),
+                ...$project->only(['id', 'project_code', 'project_name', 'project_description', 'source_of_funds', 'location', 'contract_duration']),
                 'sections_count' => $project->sections()->count(),
                 'items_count' => $project->items()->count(),
                 'total_cost' => (float) $project->items()->sum('total_cost'),

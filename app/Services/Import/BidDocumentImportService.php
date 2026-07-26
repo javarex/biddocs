@@ -86,6 +86,9 @@ class BidDocumentImportService
                     if (trim((string) ($parsed['project']['project_description'] ?? '')) !== '') {
                         $projectDetails['project_description'] = $parsed['project']['project_description'];
                     }
+                    if (trim((string) ($parsed['project']['source_of_funds'] ?? '')) !== '') {
+                        $projectDetails['source_of_funds'] = $parsed['project']['source_of_funds'];
+                    }
                     if ($projectDetails !== []) {
                         $project->update($projectDetails);
                     }

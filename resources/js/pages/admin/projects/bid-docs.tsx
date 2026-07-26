@@ -31,6 +31,7 @@ type Props = {
         project_code: string;
         project_name: string;
         project_description: string | null;
+        source_of_funds: string | null;
         location: string;
         contract_duration: number;
         sections_count: number;
@@ -667,6 +668,14 @@ export default function ProjectBidDocuments({
                             <CardDescription>Duration</CardDescription>
                             <CardTitle>
                                 {project.contract_duration} days
+                            </CardTitle>
+                        </CardHeader>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardDescription>Source of funds</CardDescription>
+                            <CardTitle className="text-base leading-snug">
+                                {project.source_of_funds || '—'}
                             </CardTitle>
                         </CardHeader>
                     </Card>

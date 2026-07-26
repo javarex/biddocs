@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Import\BidDocumentImportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\TestCase;
@@ -20,9 +21,31 @@ class ExcelImportTest extends TestCase
     public function test_guests_and_normal_users_cannot_access_imports(): void
     {
         $this->get(route('admin.imports.index'))->assertRedirect(route('login'));
+        $this->get(route('admin.imports.templates.abc'))->assertRedirect(route('login'));
 
-        $user = User::factory()->create(['is_super_admin' => false]);
+        $user = User::factory()->create(['is_super_admin' => false, 'is_active' => true]);
         $this->actingAs($user)->get(route('admin.imports.index'))->assertForbidden();
+        $this->actingAs($user)->get(route('admin.imports.templates.abc'))->assertForbidden();
+    }
+
+    public function test_super_admin_can_download_the_abc_template_with_a_custom_filename(): void
+    {
+        $admin = User::factory()->create(['is_super_admin' => true, 'is_active' => true]);
+
+        $response = $this->actingAs($admin)->get(route('admin.imports.templates.abc', [
+            'filename' => 'My Project ABC.xlsm',
+        ]));
+
+        $response->assertOk();
+        $response->assertDownload('My Project ABC.xlsm');
+        $this->assertSame(
+            hash_file('sha256', resource_path('templates/abc.xlsm')),
+            hash('sha256', $response->streamedContent()),
+        );
+
+        $template = IOFactory::load(resource_path('templates/abc.xlsm'));
+        $this->assertSame('Source of Funds:', $template->getSheet(0)->getCell('K3')->getFormattedValue());
+        $this->assertSame('', $template->getSheet(0)->getCell('L3')->getFormattedValue());
     }
 
     public function test_super_admin_can_preview_and_commit_a_valid_workbook(): void
@@ -109,6 +132,7 @@ class ExcelImportTest extends TestCase
         $this->assertSame(2, $preview->total_rows);
         $this->assertSame('CW-123', $preview->metadata['project']['project_code']);
         $this->assertSame('TEST DESCRIPTION', $preview->metadata['project']['project_description']);
+        $this->assertSame('AB CY 2026 – 20% DF', $preview->metadata['project']['source_of_funds']);
         $this->assertSame('CURRENT TEMPLATE LOCATION', $preview->metadata['project']['location']);
 
         $service->commit($preview);
@@ -117,6 +141,7 @@ class ExcelImportTest extends TestCase
             'project_code' => 'CW-123',
             'project_name' => 'CURRENT TEMPLATE PROJECT',
             'project_description' => 'TEST DESCRIPTION',
+            'source_of_funds' => 'AB CY 2026 – 20% DF',
             'location' => 'CURRENT TEMPLATE LOCATION',
             'contract_duration' => 200,
         ]);
@@ -159,6 +184,8 @@ class ExcelImportTest extends TestCase
         $sheet->setCellValue('L1', 'TEST DESCRIPTION');
         $sheet->setCellValue('K2', 'Contract Duration:');
         $sheet->setCellValue('L2', 200);
+        $sheet->setCellValue('K3', 'Source of Funds:');
+        $sheet->setCellValue('L3', 'AB CY 2026 – 20% DF');
         foreach (['A5' => 'PAY ITEM NO.', 'B5' => 'DESCRIPTION', 'C5' => 'UNIT', 'D5' => 'QUANTITY', 'E5' => 'ESTIMATED DIRECT COST', 'J5' => 'VAT (5+9) 5%', 'K5' => 'TOTAL INDIRECT COST (9 + 10)', 'L5' => 'TOTAL COST (5 + 11)', 'M5' => 'UNIT COST (Adjusted) (12/3)', 'F7' => 'OCM', 'G7' => 'PROFIT', 'H7' => '%', 'I7' => 'VALUE (5*8)'] as $cell => $value) {
             $sheet->setCellValue($cell, $value);
         }

@@ -182,7 +182,7 @@ class BidDocumentWorkbookParser
         return max($headerRow, $subHeaderRow) + 3;
     }
 
-    /** @return array{project_code: string, project_name: string, project_description: string, location: string, contract_duration: ?float} */
+    /** @return array{project_code: string, project_name: string, project_description: string, source_of_funds: string, location: string, contract_duration: ?float} */
     private function readProject(Worksheet $sheet): array
     {
         $labels = [];
@@ -200,6 +200,7 @@ class BidDocumentWorkbookParser
             'project_code' => $this->valueForLabel($sheet, $labels, ['CODE', 'PROJECT CODE']),
             'project_name' => $this->valueForLabel($sheet, $labels, ['PROJECT', 'PROJECT NAME'], 'B1'),
             'project_description' => $this->valueForLabel($sheet, $labels, ['PROJECT DESCRIPTION']),
+            'source_of_funds' => $this->valueForLabel($sheet, $labels, ['SOURCE OF FUND', 'SOURCE OF FUNDS', 'FUNDING SOURCE']),
             'location' => $this->valueForLabel($sheet, $labels, ['LOCATION'], 'B2'),
             'contract_duration' => $this->numberForLabel($sheet, $labels, ['CONTRACT DURATION'], 'L2'),
         ];
