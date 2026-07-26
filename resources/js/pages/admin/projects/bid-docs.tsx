@@ -1,6 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { renderAsync } from 'docx-preview';
 import {
+    ArrowUp,
     Download,
     FileText,
     Import,
@@ -48,6 +49,13 @@ type Props = {
     };
 };
 
+type TableOfContentsEntry = {
+    bookmark: string;
+    label: string;
+    level: number;
+    pageNumber: string | null;
+};
+
 const currency = new Intl.NumberFormat('en-PH', {
     style: 'currency',
     currency: 'PHP',
@@ -73,6 +81,7 @@ export default function ProjectBidDocuments({
 }: Props) {
     const documentContainer = useRef<HTMLDivElement>(null);
     const styleContainer = useRef<HTMLDivElement>(null);
+    const tableOfContentsPage = useRef<HTMLElement | null>(null);
     const originalParagraphs = useRef(
         new Map<string, { html: string; text: string }>(),
     );
@@ -85,6 +94,10 @@ export default function ProjectBidDocuments({
     const [saving, setSaving] = useState(false);
     const [dirtyCount, setDirtyCount] = useState(0);
     const [editableParagraphCount, setEditableParagraphCount] = useState(0);
+    const [hasTableOfContentsPage, setHasTableOfContentsPage] = useState(false);
+    const [tableOfContents, setTableOfContents] = useState<
+        TableOfContentsEntry[]
+    >([]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -93,6 +106,9 @@ export default function ProjectBidDocuments({
             try {
                 setLoading(true);
                 setError(null);
+                tableOfContentsPage.current = null;
+                setHasTableOfContentsPage(false);
+                setTableOfContents([]);
                 const response = await fetch(documentUrl, {
                     credentials: 'same-origin',
                     signal: controller.signal,
@@ -131,6 +147,88 @@ export default function ProjectBidDocuments({
                         experimental: true,
                     },
                 );
+
+                const sections = Array.from(
+                    documentContainer.current.querySelectorAll<HTMLElement>(
+                        'section.bid-docx',
+                    ),
+                );
+                tableOfContentsPage.current =
+                    sections.find((section) =>
+                        Array.from(section.querySelectorAll('p')).some(
+                            (paragraph) =>
+                                (paragraph.textContent ?? '')
+                                    .replace(/\s+/g, ' ')
+                                    .trim()
+                                    .toLocaleUpperCase() ===
+                                'TABLE OF CONTENTS',
+                        ),
+                    ) ?? null;
+                setHasTableOfContentsPage(tableOfContentsPage.current !== null);
+
+                const contentsLinks = Array.from(
+                    tableOfContentsPage.current?.querySelectorAll<HTMLAnchorElement>(
+                        'a[href^="#"]',
+                    ) ?? [],
+                );
+                const minimumLeft =
+                    contentsLinks.length > 0
+                        ? Math.min(
+                              ...contentsLinks.map(
+                                  (link) => link.getBoundingClientRect().left,
+                              ),
+                          )
+                        : 0;
+                const includedBookmarks = new Set<string>();
+                const tableOfContentsEntries =
+                    contentsLinks.flatMap<TableOfContentsEntry>((link) => {
+                        const target = link.getAttribute('href');
+                        const label = link.textContent?.trim();
+
+                        if (!target || target === '#' || !label) {
+                            return [];
+                        }
+
+                        const bookmark = target.slice(1);
+
+                        if (includedBookmarks.has(bookmark)) {
+                            return [];
+                        }
+
+                        const destination =
+                            documentContainer.current?.querySelector(
+                                `[id="${CSS.escape(bookmark)}"]`,
+                            );
+
+                        if (!destination) {
+                            return [];
+                        }
+
+                        includedBookmarks.add(bookmark);
+                        const paragraph = link.closest('p');
+                        const remainingText = (paragraph?.textContent ?? '')
+                            .replace(link.textContent ?? '', '')
+                            .trim();
+
+                        return [
+                            {
+                                bookmark,
+                                label,
+                                pageNumber:
+                                    remainingText.match(/(\d+)\s*$/)?.[1] ??
+                                    null,
+                                level: Math.max(
+                                    0,
+                                    Math.round(
+                                        (link.getBoundingClientRect().left -
+                                            minimumLeft) /
+                                            40,
+                                    ),
+                                ),
+                            },
+                        ];
+                    });
+                setTableOfContents(tableOfContentsEntries);
 
                 const indexedParagraphs = new Map<
                     string,
@@ -276,6 +374,22 @@ export default function ProjectBidDocuments({
         selection.removeAllRanges();
         selection.addRange(range);
         updateDirtyParagraph(paragraph);
+    };
+
+    const navigateToTableOfContentsPage = () => {
+        tableOfContentsPage.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+        });
+    };
+
+    const navigateToDocumentBookmark = (bookmark: string) => {
+        const target = Array.from(
+            documentContainer.current?.querySelectorAll<HTMLElement>('[id]') ??
+                [],
+        ).find((element) => element.id === bookmark);
+
+        target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
     const startEditing = () => {
@@ -674,6 +788,62 @@ export default function ProjectBidDocuments({
                         />
                     </CardContent>
                 </Card>
+
+                {hasTableOfContentsPage && (
+                    <>
+                        {tableOfContents.length > 0 && (
+                            <Card
+                                className={`fixed right-3 left-3 z-40 flex max-h-[50vh] flex-col shadow-xl sm:left-auto sm:w-72 print:hidden ${
+                                    editing ? 'bottom-36' : 'bottom-16'
+                                }`}
+                            >
+                                <CardHeader className="shrink-0 px-3 py-2">
+                                    <CardTitle className="text-sm">
+                                        Table of Contents
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+                                    <nav aria-label="Table of Contents">
+                                        <ul>
+                                            {tableOfContents.map((entry) => (
+                                                <li key={entry.bookmark}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            navigateToDocumentBookmark(
+                                                                entry.bookmark,
+                                                            )
+                                                        }
+                                                        style={{
+                                                            paddingLeft: `${0.375 + entry.level * 0.75}rem`,
+                                                        }}
+                                                        className="flex w-full items-baseline rounded-sm py-1 pr-1.5 text-left text-xs leading-tight font-medium hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                                                    >
+                                                        <span className="min-w-0 flex-1 truncate">
+                                                            {entry.label}
+                                                        </span>
+                                                    </button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </nav>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        <Button
+                            type="button"
+                            onClick={navigateToTableOfContentsPage}
+                            className={`fixed left-1/2 z-40 -translate-x-1/2 opacity-70 shadow-lg transition-opacity hover:opacity-100 print:hidden ${
+                                editing ? 'bottom-24' : 'bottom-4'
+                            }`}
+                            aria-label="Go to Table of Content"
+                        >
+                            <ArrowUp />
+                            Go to Table of Content
+                        </Button>
+                    </>
+                )}
             </div>
         </>
     );
