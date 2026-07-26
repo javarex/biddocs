@@ -33,17 +33,17 @@ class ExcelImportTest extends TestCase
         $admin = User::factory()->create(['is_super_admin' => true, 'is_active' => true]);
 
         $response = $this->actingAs($admin)->get(route('admin.imports.templates.abc', [
-            'filename' => 'My Project ABC.xlsm',
+            'filename' => 'My Project ABC.xlsx',
         ]));
 
         $response->assertOk();
-        $response->assertDownload('My Project ABC.xlsm');
+        $response->assertDownload('My Project ABC.xlsx');
         $this->assertSame(
-            hash_file('sha256', resource_path('templates/abc.xlsm')),
+            hash_file('sha256', resource_path('templates/abc.xlsx')),
             hash('sha256', $response->streamedContent()),
         );
 
-        $template = IOFactory::load(resource_path('templates/abc.xlsm'));
+        $template = IOFactory::load(resource_path('templates/abc.xlsx'));
         $this->assertSame('Source of Funds:', $template->getSheet(0)->getCell('K3')->getFormattedValue());
         $this->assertSame('', $template->getSheet(0)->getCell('L3')->getFormattedValue());
     }

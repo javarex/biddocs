@@ -164,7 +164,7 @@ export default function ImportsIndex({
                                 <DialogTitle>Rename ABC template</DialogTitle>
                                 <DialogDescription>
                                     Enter the filename to use for the downloaded
-                                    template. The .xlsm extension will be added
+                                    template. The .xlsx extension will be added
                                     automatically.
                                 </DialogDescription>
                             </DialogHeader>
@@ -185,7 +185,7 @@ export default function ImportsIndex({
                                         className="rounded-r-none"
                                     />
                                     <span className="flex h-9 items-center rounded-r-md border border-l-0 bg-muted px-3 text-sm text-muted-foreground">
-                                        .xlsm
+                                        .xlsx
                                     </span>
                                 </div>
                             </div>

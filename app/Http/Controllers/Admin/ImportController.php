@@ -49,9 +49,9 @@ class ImportController extends Controller
         }
 
         return response()->download(
-            resource_path('templates/abc.xlsm'),
-            $filename.'.xlsm',
-            ['Content-Type' => 'application/vnd.ms-excel.sheet.macroEnabled.12'],
+            resource_path('templates/abc.xlsx'),
+            $filename.'.xlsx',
+            ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
         );
     }
 
