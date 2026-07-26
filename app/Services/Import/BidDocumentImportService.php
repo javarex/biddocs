@@ -37,7 +37,6 @@ class BidDocumentImportService
                     'new_rows' => $prepared['new_rows'],
                     'existing_rows' => $prepared['existing_rows'],
                     'valid_rows' => count($prepared['valid_rows']),
-                    'unmapped_columns' => ['J' => 'Calculated VAT amount; the schema stores the VAT percentage instead.'],
                     'sample_rows' => array_slice(array_map(fn (array $row): array => [
                         'excel_row' => $row['excel_row'],
                         ...$row['values'],
@@ -74,10 +73,22 @@ class BidDocumentImportService
             $counts = DB::transaction(function () use ($history, $parsed, $prepared): array {
                 $project = $this->projectFor($parsed['project'], $history);
                 if ($project === null) {
+                    $projectCode = $this->projectCode($parsed['project']);
                     $project = Project::query()->updateOrCreate(
-                        ['project_code' => $this->projectCode($parsed['project'])],
-                        $parsed['project'] + ['project_code' => $this->projectCode($parsed['project'])],
+                        ['project_code' => $projectCode],
+                        [...$parsed['project'], 'project_code' => $projectCode],
                     );
+                } else {
+                    $projectDetails = [];
+                    if (trim((string) ($parsed['project']['project_code'] ?? '')) !== '') {
+                        $projectDetails['project_code'] = $this->projectCode($parsed['project']);
+                    }
+                    if (trim((string) ($parsed['project']['project_description'] ?? '')) !== '') {
+                        $projectDetails['project_description'] = $parsed['project']['project_description'];
+                    }
+                    if ($projectDetails !== []) {
+                        $project->update($projectDetails);
+                    }
                 }
                 $sections = [];
                 $subSections = [];
@@ -221,7 +232,7 @@ class BidDocumentImportService
                 $errors[] = "{$field} is required.";
             }
         }
-        foreach (['qty', 'estimated_direct_cost', 'total_indirect_cost', 'total_cost', 'unit_cost_adjusted'] as $field) {
+        foreach (['qty', 'estimated_direct_cost', 'vat_five_percent', 'total_indirect_cost', 'total_cost', 'unit_cost_adjusted'] as $field) {
             $value = $values[$field] ?? null;
             if ($value === null || ! is_finite((float) $value) || (float) $value < 0) {
                 $errors[] = "{$field} must be a non-negative number.";
@@ -256,6 +267,15 @@ class BidDocumentImportService
     /** @param array<string, mixed> $project */
     private function projectCode(array $project): string
     {
+        $workbookCode = trim((string) ($project['project_code'] ?? ''));
+        if ($workbookCode !== '') {
+            if (mb_strlen($workbookCode) > 45) {
+                throw ValidationException::withMessages(['file' => 'The workbook project code must not exceed 45 characters.']);
+            }
+
+            return $workbookCode;
+        }
+
         return 'IMP-'.strtoupper(substr(hash('sha256', implode('|', [
             $project['project_name'], $project['location'], $project['contract_duration'],
         ])), 0, 40));

@@ -29,6 +29,7 @@ type Props = {
         id: number;
         project_code: string;
         project_name: string;
+        project_description: string | null;
         location: string;
         contract_duration: number;
         sections_count: number;
@@ -522,13 +523,29 @@ export default function ProjectBidDocuments({
                     }
                 />
 
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 print:hidden">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
                     <Card className="lg:col-span-2">
                         <CardHeader>
                             <CardDescription>Project</CardDescription>
                             <CardTitle className="text-base leading-snug">
                                 {project.project_name}
                             </CardTitle>
+                        </CardHeader>
+                    </Card>
+                    <Card className="lg:col-span-2">
+                        <CardHeader>
+                            <CardDescription>
+                                Project description
+                            </CardDescription>
+                            <CardTitle className="text-base leading-snug">
+                                {project.project_description || '—'}
+                            </CardTitle>
+                        </CardHeader>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardDescription>Project code</CardDescription>
+                            <CardTitle>{project.project_code}</CardTitle>
                         </CardHeader>
                     </Card>
                     <Card>

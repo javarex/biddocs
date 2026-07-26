@@ -1,5 +1,11 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowLeft, FileText, Import, Trash2 } from 'lucide-react';
+import {
+    ArrowLeft,
+    FileSpreadsheet,
+    FileText,
+    Import,
+    Trash2,
+} from 'lucide-react';
 import ConfirmDialog from '@/components/confirm-dialog';
 import EmptyState from '@/components/empty-state';
 import PageHeader from '@/components/page-header';
@@ -37,6 +43,7 @@ type Props = {
         id: number;
         project_code: string;
         project_name: string;
+        project_description: string | null;
         location: string;
         contract_duration: number;
         sections: Section[];
@@ -85,7 +92,7 @@ export default function ProjectsShow({ project }: Props) {
                                 <Link
                                     href={`/admin/projects/${project.id}/import`}
                                 >
-                                    <Import /> Import / Update
+                                    <FileSpreadsheet /> Excel Imports
                                 </Link>
                             </Button>
                             <ConfirmDialog
@@ -108,6 +115,18 @@ export default function ProjectsShow({ project }: Props) {
                 />
 
                 <div className="grid gap-4 sm:grid-cols-3">
+                    {project.project_description && (
+                        <Card className="sm:col-span-3">
+                            <CardHeader className="pb-3">
+                                <CardDescription>
+                                    Project description
+                                </CardDescription>
+                                <CardTitle className="text-base leading-snug">
+                                    {project.project_description}
+                                </CardTitle>
+                            </CardHeader>
+                        </Card>
+                    )}
                     <Card>
                         <CardHeader className="pb-3">
                             <CardDescription>Contract duration</CardDescription>

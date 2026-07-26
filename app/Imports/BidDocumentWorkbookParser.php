@@ -36,6 +36,7 @@ class BidDocumentWorkbookParser
         $skippedRows = 0;
         $currentSection = null;
         $currentSubSection = null;
+        $dataStartRow = 9;
         $highestRow = (int) $worksheetInfo['totalRows'];
         $chunkSize = max(1, (int) config('imports.chunk_size', 500));
 
@@ -56,19 +57,18 @@ class BidDocumentWorkbookParser
             }
 
             if ($chunkStart === 1) {
-                $headers = $this->readHeaders($sheet);
-                $project = [
-                    'project_name' => $this->text($sheet, 'B1'),
-                    'location' => $this->text($sheet, 'B2'),
-                    'contract_duration' => $this->number($sheet, 'L2'),
-                ];
+                $headerRow = $this->findHeaderRow($sheet);
+                $subHeaderRow = $this->findSubHeaderRow($sheet, $headerRow);
+                $headers = $this->readHeaders($sheet, $headerRow, $subHeaderRow);
+                $project = $this->readProject($sheet);
+                $dataStartRow = $this->findDataStartRow($sheet, $headerRow, $subHeaderRow);
 
                 if ($project['project_name'] === '' || $project['location'] === '' || $project['contract_duration'] === null) {
                     throw ValidationException::withMessages(['file' => 'The workbook is missing project name, location, or contract duration.']);
                 }
             }
 
-            for ($rowNumber = max(9, $chunkStart); $rowNumber <= min($highestRow, $chunkStart + $chunkSize - 1); $rowNumber++) {
+            for ($rowNumber = max($dataStartRow, $chunkStart); $rowNumber <= min($highestRow, $chunkStart + $chunkSize - 1); $rowNumber++) {
                 $a = $this->text($sheet, "A{$rowNumber}");
                 $b = $this->text($sheet, "B{$rowNumber}");
                 $values = $this->rowValues($sheet, $rowNumber);
@@ -126,13 +126,16 @@ class BidDocumentWorkbookParser
     }
 
     /** @return array<string, string> */
-    private function readHeaders(Worksheet $sheet): array
+    private function readHeaders(Worksheet $sheet, int $headerRow, int $subHeaderRow): array
     {
         $required = [
-            'A4' => 'PAY ITEM NO.', 'B4' => 'DESCRIPTION', 'C4' => 'UNIT', 'D4' => 'QUANTITY',
-            'E4' => 'ESTIMATED DIRECT COST', 'F6' => 'OCM', 'G6' => 'PROFIT', 'H6' => '%',
-            'I6' => 'VALUE', 'J4' => 'VAT', 'K4' => 'TOTAL INDIRECT COST', 'L4' => 'TOTAL COST',
-            'M4' => 'UNIT COST',
+            "A{$headerRow}" => 'PAY ITEM NO.', "B{$headerRow}" => 'DESCRIPTION',
+            "C{$headerRow}" => 'UNIT', "D{$headerRow}" => 'QUANTITY',
+            "E{$headerRow}" => 'ESTIMATED DIRECT COST', "F{$subHeaderRow}" => 'OCM',
+            "G{$subHeaderRow}" => 'PROFIT', "H{$subHeaderRow}" => '%',
+            "I{$subHeaderRow}" => 'VALUE', "J{$headerRow}" => 'VAT',
+            "K{$headerRow}" => 'TOTAL INDIRECT COST', "L{$headerRow}" => 'TOTAL COST',
+            "M{$headerRow}" => 'UNIT COST',
         ];
         $headers = [];
         foreach ($required as $cell => $expected) {
@@ -144,6 +147,92 @@ class BidDocumentWorkbookParser
         }
 
         return $headers;
+    }
+
+    private function findHeaderRow(Worksheet $sheet): int
+    {
+        for ($row = 1; $row <= 20; $row++) {
+            if ($this->contains($this->text($sheet, "A{$row}"), 'PAY ITEM NO.')) {
+                return $row;
+            }
+        }
+
+        throw ValidationException::withMessages(['file' => 'The required header PAY ITEM NO. was not found in column A.']);
+    }
+
+    private function findSubHeaderRow(Worksheet $sheet, int $headerRow): int
+    {
+        for ($row = $headerRow; $row <= min(20, $headerRow + 5); $row++) {
+            if ($this->contains($this->text($sheet, "F{$row}"), 'OCM')) {
+                return $row;
+            }
+        }
+
+        throw ValidationException::withMessages(['file' => 'The required header OCM was not found in column F.']);
+    }
+
+    private function findDataStartRow(Worksheet $sheet, int $headerRow, int $subHeaderRow): int
+    {
+        for ($row = $subHeaderRow + 1; $row <= min(25, $subHeaderRow + 5); $row++) {
+            if ($this->normalized($this->text($sheet, "A{$row}")) === '(1)') {
+                return $row + 1;
+            }
+        }
+
+        return max($headerRow, $subHeaderRow) + 3;
+    }
+
+    /** @return array{project_code: string, project_name: string, project_description: string, location: string, contract_duration: ?float} */
+    private function readProject(Worksheet $sheet): array
+    {
+        $labels = [];
+
+        foreach (range(1, 10) as $row) {
+            foreach (['A' => 'B', 'K' => 'L'] as $labelColumn => $valueColumn) {
+                $label = rtrim($this->normalized($this->text($sheet, "{$labelColumn}{$row}")), ':');
+                if ($label !== '') {
+                    $labels[$label] = "{$valueColumn}{$row}";
+                }
+            }
+        }
+
+        return [
+            'project_code' => $this->valueForLabel($sheet, $labels, ['CODE', 'PROJECT CODE']),
+            'project_name' => $this->valueForLabel($sheet, $labels, ['PROJECT', 'PROJECT NAME'], 'B1'),
+            'project_description' => $this->valueForLabel($sheet, $labels, ['PROJECT DESCRIPTION']),
+            'location' => $this->valueForLabel($sheet, $labels, ['LOCATION'], 'B2'),
+            'contract_duration' => $this->numberForLabel($sheet, $labels, ['CONTRACT DURATION'], 'L2'),
+        ];
+    }
+
+    /**
+     * @param  array<string, string>  $labels
+     * @param  array<int, string>  $names
+     */
+    private function valueForLabel(Worksheet $sheet, array $labels, array $names, ?string $fallback = null): string
+    {
+        foreach ($names as $name) {
+            if (isset($labels[$name])) {
+                return $this->text($sheet, $labels[$name]);
+            }
+        }
+
+        return $fallback === null ? '' : $this->text($sheet, $fallback);
+    }
+
+    /**
+     * @param  array<string, string>  $labels
+     * @param  array<int, string>  $names
+     */
+    private function numberForLabel(Worksheet $sheet, array $labels, array $names, string $fallback): ?float
+    {
+        foreach ($names as $name) {
+            if (isset($labels[$name])) {
+                return $this->number($sheet, $labels[$name]);
+            }
+        }
+
+        return $this->number($sheet, $fallback);
     }
 
     /** @return array<string, mixed> */
@@ -159,7 +248,7 @@ class BidDocumentWorkbookParser
             'profit' => $this->number($sheet, "G{$row}"),
             'total_markup_percentage' => $this->number($sheet, "H{$row}"),
             'total_markup_value' => $this->number($sheet, "I{$row}"),
-            'vat_percentage' => 5.0,
+            'vat_five_percent' => $this->number($sheet, "J{$row}"),
             'total_indirect_cost' => $this->number($sheet, "K{$row}"),
             'total_cost' => $this->number($sheet, "L{$row}"),
             'unit_cost_adjusted' => $this->number($sheet, "M{$row}"),
@@ -204,5 +293,15 @@ class BidDocumentWorkbookParser
     private function isLetterPart(string $value): bool
     {
         return preg_match('/^PART\s+[A-Z]\b/i', $value) === 1;
+    }
+
+    private function contains(string $actual, string $expected): bool
+    {
+        return Str::contains($this->normalized($actual), $this->normalized($expected));
+    }
+
+    private function normalized(string $value): string
+    {
+        return Str::upper(preg_replace('/\s+/u', ' ', trim($value)) ?? '');
     }
 }

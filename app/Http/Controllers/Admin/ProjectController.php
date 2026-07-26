@@ -35,6 +35,7 @@ class ProjectController extends Controller
                 'id' => $project->id,
                 'project_code' => $project->project_code,
                 'project_name' => $project->project_name,
+                'project_description' => $project->project_description,
                 'location' => $project->location,
                 'contract_duration' => $project->contract_duration,
                 'sections_count' => $project->sections_count,
@@ -62,6 +63,7 @@ class ProjectController extends Controller
                 'id' => $project->id,
                 'project_code' => $project->project_code,
                 'project_name' => $project->project_name,
+                'project_description' => $project->project_description,
                 'location' => $project->location,
                 'contract_duration' => $project->contract_duration,
                 'sections' => $project->sections->map(fn (Section $section): array => [

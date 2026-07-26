@@ -5,6 +5,7 @@ namespace Tests\Feature\Admin;
 use App\Models\BidDocumentVersion;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\BidDocumentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -47,6 +48,8 @@ XML);
                 <w:r><w:fldChar w:fldCharType="end"/></w:r>
             </w:hyperlink>
         </w:p>
+        <w:p><w:r><w:t>(Construction of 2-classroom with toile attached in each room and bundled school furniture)</w:t></w:r></w:p>
+        <w:p><w:r><w:t>Civil Works No. CW25-______</w:t></w:r></w:p>
         <w:sectPr/>
     </w:body>
 </w:document>
@@ -160,6 +163,24 @@ XML);
         Storage::disk('local')->assertMissing($storedPath);
     }
 
+    public function test_generated_document_uses_the_project_code_and_description(): void
+    {
+        $project = $this->project();
+        $path = app(BidDocumentService::class)->generate($project);
+
+        $archive = new ZipArchive;
+        $archive->open($path);
+        $xml = $archive->getFromName('word/document.xml');
+        $archive->close();
+        unlink($path);
+
+        $this->assertIsString($xml);
+        $this->assertStringContainsString('CW26-001', $xml);
+        $this->assertStringContainsString('Construction of a new testing facility', $xml);
+        $this->assertStringNotContainsString('CW25-______', $xml);
+        $this->assertStringNotContainsString('Construction of 2-classroom', $xml);
+    }
+
     public function test_normal_users_cannot_save_or_reset_direct_document_edits(): void
     {
         $user = User::factory()->create(['is_super_admin' => false, 'is_active' => true]);
@@ -179,6 +200,7 @@ XML);
         return Project::query()->create([
             'project_code' => 'CW26-001',
             'project_name' => 'Editable Project',
+            'project_description' => 'Construction of a new testing facility',
             'location' => 'Davao de Oro',
             'contract_duration' => 120,
         ]);

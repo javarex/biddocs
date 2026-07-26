@@ -12,7 +12,7 @@ class ProjectItem extends Model
     protected $fillable = [
         'section_id', 'sub_section_id', 'pay_item_no', 'description', 'unit', 'qty',
         'estimated_direct_cost', 'ocm', 'profit', 'total_markup_percentage',
-        'total_markup_value', 'vat_percentage', 'total_indirect_cost', 'total_cost',
+        'total_markup_value', 'vat_five_percent', 'total_indirect_cost', 'total_cost',
         'unit_cost_adjusted',
     ];
 
@@ -20,7 +20,7 @@ class ProjectItem extends Model
     {
         return array_fill_keys([
             'qty', 'estimated_direct_cost', 'ocm', 'profit', 'total_markup_percentage',
-            'total_markup_value', 'vat_percentage', 'total_indirect_cost', 'total_cost',
+            'total_markup_value', 'vat_five_percent', 'total_indirect_cost', 'total_cost',
             'unit_cost_adjusted',
         ], 'float');
     }

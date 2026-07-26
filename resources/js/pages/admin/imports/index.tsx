@@ -52,7 +52,6 @@ type Preview = {
         new_rows?: number;
         existing_rows?: number;
         sample_rows?: Array<Record<string, unknown>>;
-        unmapped_columns?: Record<string, string>;
     };
     failures: Failure[];
 };
@@ -307,13 +306,6 @@ export default function ImportsIndex({
                                     </div>
                                 ))}
                             </div>
-                            {preview.metadata.unmapped_columns && (
-                                <p className="text-sm text-muted-foreground">
-                                    Unmapped workbook value: column J is the
-                                    calculated VAT amount; the existing schema
-                                    stores the VAT percentage as 5%.
-                                </p>
-                            )}
                             <div className="flex flex-wrap gap-2">
                                 <ConfirmDialog
                                     title="Commit this import?"

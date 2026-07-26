@@ -177,7 +177,14 @@ class BidDocumentService
                 "{$durationWords} ({$project->contract_duration})",
                 $updated,
             ) ?? $updated;
-            $updated = preg_replace('/CW25-\s*_+/i', $project->project_code, $updated) ?? $updated;
+            $updated = preg_replace('/CW\d{2}-\s*(?:_+|\d{3})?/i', $project->project_code, $updated) ?? $updated;
+            if (trim((string) $project->project_description) !== '') {
+                $updated = preg_replace(
+                    '/Construction\s+(?:of\s+)?2[\s-]*classroom\s+with\s+toilet?\s+attached\s+in\s+each\s+room\s+and\s+bundled\s+school(?:\s+furnitures?)?/i',
+                    $project->project_description,
+                    $updated,
+                ) ?? $updated;
+            }
             $updated = preg_replace('/7\s*,\s*194\s*,\s*519\.49/', number_format($total, 2), $updated) ?? $updated;
             $updated = preg_replace(
                 '/Seven\s+Million\s+One\s+Hundred\s+Ninety-Four\s+Thousand\s+Five\s+Hundred\s+Nineteen\s+Pesos\s+and\s+Forty-Nine\s+Centavos\s+Only/i',

@@ -1,5 +1,12 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { Eye, FileText, FolderKanban, Import, Search, Trash2 } from 'lucide-react';
+import {
+    Eye,
+    FileText,
+    FolderKanban,
+    Import,
+    Search,
+    Trash2,
+} from 'lucide-react';
 import ConfirmDialog from '@/components/confirm-dialog';
 import DataTable from '@/components/data-table';
 import EmptyState from '@/components/empty-state';
@@ -13,6 +20,7 @@ type ProjectRow = {
     id: number;
     project_code: string;
     project_name: string;
+    project_description: string | null;
     location: string;
     contract_duration: number;
     sections_count: number;
@@ -98,6 +106,13 @@ export default function ProjectsIndex({ projects, filters }: Props) {
                                                 <p className="text-xs text-muted-foreground">
                                                     {project.project_code}
                                                 </p>
+                                                {project.project_description && (
+                                                    <p className="mt-1 text-xs text-muted-foreground">
+                                                        {
+                                                            project.project_description
+                                                        }
+                                                    </p>
+                                                )}
                                             </div>
                                         </div>
                                     </td>
