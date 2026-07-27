@@ -165,6 +165,12 @@ class BidDocumentService
                 continue;
             }
 
+            if (preg_match('/^Name\s+of\s+Project\s*:/i', $text) === 1) {
+                $this->setNodeText($xpath, $paragraph, 'Name of Project: '.$projectTitle);
+
+                continue;
+            }
+
             $updated = preg_replace(
                 '/Construction of\s*1\s*Unit,?\s*1-Storey,?\s*2[\s-]*Classroom\s*School\s*Building\s*at\s*Buhi\s*Elementary\s*School,?\s*Brgy\s*\.?\s*Ampawid\s*,?\s*Laak\s*,?\s*Davao\s*de\s*Oro/i',
                 $projectTitle,
