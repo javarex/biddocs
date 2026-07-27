@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 type UserDetails = {
     id: number;
     name: string;
+    username: string;
     email: string;
     is_active: boolean;
     is_super_admin: boolean;
@@ -84,6 +85,10 @@ export default function ShowUser({ user }: { user: UserDetails }) {
                             <CardTitle>Account</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4 text-sm">
+                            <div className="flex justify-between border-b pb-3">
+                                <span>Username</span>
+                                <span>{user.username}</span>
+                            </div>
                             <div className="flex justify-between border-b pb-3">
                                 <span>Status</span>
                                 <StatusBadge active={user.is_active} />

@@ -22,6 +22,7 @@ class UserManagementTest extends TestCase
 
         $this->actingAs($admin)->post(route('admin.users.store'), [
             'name' => 'New User',
+            'username' => 'new-user',
             'email' => 'new@example.com',
             'password' => 'password',
             'password_confirmation' => 'password',
@@ -30,13 +31,14 @@ class UserManagementTest extends TestCase
         $user = User::where('email', 'new@example.com')->firstOrFail();
         $this->actingAs($admin)->put(route('admin.users.update', $user), [
             'name' => 'Updated User',
+            'username' => 'updated-user',
             'email' => 'updated@example.com',
             'is_active' => false,
             'is_super_admin' => false,
             'roles' => [],
         ])->assertRedirect(route('admin.users.show', $user));
 
-        $this->assertDatabaseHas('users', ['email' => 'updated@example.com', 'name' => 'Updated User', 'is_active' => false]);
+        $this->assertDatabaseHas('users', ['username' => 'updated-user', 'email' => 'updated@example.com', 'name' => 'Updated User', 'is_active' => false]);
     }
 
     public function test_super_admin_can_reset_a_password(): void
@@ -67,6 +69,7 @@ class UserManagementTest extends TestCase
 
         $this->actingAs($admin)->put(route('admin.users.update', $admin), [
             'name' => $admin->name,
+            'username' => $admin->username,
             'email' => $admin->email,
             'is_active' => true,
             'is_super_admin' => false,
@@ -82,7 +85,7 @@ class UserManagementTest extends TestCase
         $admin = $this->admin();
         $user = User::factory()->create();
 
-        $payload = ['name' => $user->name, 'email' => $user->email, 'is_active' => true, 'is_super_admin' => true, 'roles' => []];
+        $payload = ['name' => $user->name, 'username' => $user->username, 'email' => $user->email, 'is_active' => true, 'is_super_admin' => true, 'roles' => []];
         $this->actingAs($admin)->put(route('admin.users.update', $user), $payload)->assertRedirect();
         $this->assertTrue($user->refresh()->is_super_admin);
 

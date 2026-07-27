@@ -15,7 +15,7 @@ class InactiveUserTest extends TestCase
         $user = User::factory()->create(['is_active' => false]);
 
         $this->post(route('login.store'), [
-            'email' => $user->email,
+            'login' => $user->username,
             'password' => 'password',
         ]);
 

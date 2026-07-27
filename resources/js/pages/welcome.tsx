@@ -1,4 +1,13 @@
 import { Form, Head, Link, usePage } from '@inertiajs/react';
+import {
+    Building2,
+    ChevronRight,
+    Lock,
+    Shield,
+    ShieldCheck,
+    Star,
+    Zap,
+} from 'lucide-react';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import TextLink from '@/components/text-link';
@@ -10,16 +19,6 @@ import { Spinner } from '@/components/ui/spinner';
 import { dashboard } from '@/routes';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
-import {
-    Building2,
-    ChevronRight,
-    Lock,
-    Shield,
-    ShieldCheck,
-    Star,
-    Zap,
-} from 'lucide-react';
-
 /* ─── Component ─────────────────────────────────────────── */
 export default function Welcome() {
     const { auth, csrf_token } = usePage<{
@@ -138,20 +137,20 @@ export default function Welcome() {
                                             <input type="hidden" name="_token" value={csrf_token} />
 
                                             <div className="space-y-1">
-                                                <Label htmlFor="h-email" className="text-xs font-semibold text-[#374151]">
-                                                    Email Address
+                                                <Label htmlFor="h-login" className="text-xs font-semibold text-[#374151]">
+                                                    Username or email
                                                 </Label>
                                                 <Input
-                                                    id="h-email"
-                                                    type="email"
-                                                    name="email"
+                                                    id="h-login"
+                                                    type="text"
+                                                    name="login"
                                                     required
                                                     autoFocus
-                                                    autoComplete="email"
-                                                    placeholder="you@agency.gov.ph"
+                                                    autoComplete="username"
+                                                    placeholder="Enter your username or email"
                                                     className="h-9 rounded-xl border-[#D1D5DB] bg-[#F9FAFB] text-sm focus:border-[#ECC925]"
                                                 />
-                                                <InputError message={errors.email} />
+                                                <InputError message={errors.login} />
                                             </div>
 
                                             <div className="space-y-1">

@@ -26,6 +26,7 @@ class UserController extends Controller
         $users = User::query()->with('roles')
             ->when($search !== '', fn ($query) => $query->where(fn ($query) => $query
                 ->where('name', 'like', "%{$search}%")
+                ->orWhere('username', 'like', "%{$search}%")
                 ->orWhere('email', 'like', "%{$search}%")))
             ->latest()->paginate(10)->withQueryString();
 
@@ -98,6 +99,7 @@ class UserController extends Controller
         return [
             'id' => $user->id,
             'name' => $user->name,
+            'username' => $user->username,
             'email' => $user->email,
             'is_active' => $user->is_active,
             'is_super_admin' => $user->is_super_admin,

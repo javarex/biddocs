@@ -15,6 +15,7 @@ class UserAdministrationService
         return DB::transaction(function () use ($data): User {
             $user = User::create([
                 'name' => $data['name'],
+                'username' => strtolower($data['username']),
                 'email' => strtolower($data['email']),
                 'password' => Hash::make($data['password']),
                 'is_active' => $data['is_active'] ?? true,
@@ -35,6 +36,7 @@ class UserAdministrationService
 
             $user->update([
                 'name' => $data['name'],
+                'username' => strtolower($data['username']),
                 'email' => strtolower($data['email']),
                 'is_active' => $data['is_active'] ?? $user->is_active,
                 'is_super_admin' => $data['is_super_admin'] ?? $user->is_super_admin,

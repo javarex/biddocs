@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 type UserRow = {
     id: number;
     name: string;
+    username: string;
     email: string;
     is_active: boolean;
     is_super_admin: boolean;
@@ -55,7 +56,7 @@ export default function UsersIndex({ users, filters }: Props) {
                             onChange={(event) =>
                                 search.setData('search', event.target.value)
                             }
-                            placeholder="Search name or email"
+                            placeholder="Search name, username, or email"
                         />
                     </div>
                     <Button type="submit" variant="outline">
@@ -67,6 +68,7 @@ export default function UsersIndex({ users, filters }: Props) {
                         <tr>
                             {[
                                 'Name',
+                                'Username',
                                 'Email',
                                 'Status',
                                 'Access',
@@ -92,6 +94,9 @@ export default function UsersIndex({ users, filters }: Props) {
                                     >
                                         {user.name}
                                     </Link>
+                                </td>
+                                <td className="px-4 py-3 text-muted-foreground">
+                                    {user.username}
                                 </td>
                                 <td className="px-4 py-3 text-muted-foreground">
                                     {user.email}

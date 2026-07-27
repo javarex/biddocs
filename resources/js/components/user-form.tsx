@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 export type RoleOption = { id: number; name: string; slug: string };
 export type UserFormData = {
     name: string;
+    username: string;
     email: string;
     password?: string;
     password_confirmation?: string;
@@ -20,6 +21,7 @@ export type UserFormData = {
 export type UserFormUser = {
     id: number;
     name: string;
+    username: string;
     email: string;
     is_active: boolean;
     is_super_admin: boolean;
@@ -40,6 +42,7 @@ export default function UserForm({
 }) {
     const form = useForm<UserFormData>({
         name: user?.name ?? '',
+        username: user?.username ?? '',
         email: user?.email ?? '',
         password: '',
         password_confirmation: '',
@@ -75,6 +78,19 @@ export default function UserForm({
                         required
                     />
                     <InputError message={form.errors.name} />
+                </div>
+                <div className="grid gap-2">
+                    <Label htmlFor="username">Username</Label>
+                    <Input
+                        id="username"
+                        value={form.data.username}
+                        onChange={(event) =>
+                            form.setData('username', event.target.value)
+                        }
+                        autoComplete="username"
+                        required
+                    />
+                    <InputError message={form.errors.username} />
                 </div>
                 <div className="grid gap-2">
                     <Label htmlFor="email">Email</Label>

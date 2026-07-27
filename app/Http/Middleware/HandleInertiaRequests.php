@@ -43,7 +43,7 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'csrf_token' => csrf_token(),
             'auth' => [
-                'user' => $request->user()?->only(['id', 'name', 'email', 'is_super_admin', 'is_active']),
+                'user' => $request->user()?->only(['id', 'name', 'username', 'email', 'is_super_admin', 'is_active']),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'impersonation' => [

@@ -12,11 +12,12 @@ class SuperAdminSeeder extends Seeder
     public function run(): void
     {
         $name = (string) config('super-admin.name');
+        $username = strtolower((string) config('super-admin.username'));
         $email = strtolower((string) config('super-admin.email'));
         $password = (string) config('super-admin.password');
 
-        if ($name === '' || $email === '' || $password === '') {
-            throw new InvalidArgumentException('SUPER_ADMIN_NAME, SUPER_ADMIN_EMAIL, and SUPER_ADMIN_PASSWORD must be set before seeding.');
+        if ($name === '' || $username === '' || $email === '' || $password === '') {
+            throw new InvalidArgumentException('SUPER_ADMIN_NAME, SUPER_ADMIN_USERNAME, SUPER_ADMIN_EMAIL, and SUPER_ADMIN_PASSWORD must be set before seeding.');
         }
 
         if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -27,6 +28,7 @@ class SuperAdminSeeder extends Seeder
             ['email' => $email],
             [
                 'name' => $name,
+                'username' => $username,
                 'password' => Hash::make($password),
                 'email_verified_at' => now(),
                 'is_super_admin' => true,

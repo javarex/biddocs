@@ -41,21 +41,21 @@ export default function Login({ status, canResetPassword }: Props) {
                         <input type="hidden" name="_token" value={csrf_token} />
 
                         <div className="space-y-1.5">
-                            <Label htmlFor="email" className="text-xs font-semibold text-[#374151] dark:text-slate-300">
-                                Email Address
+                            <Label htmlFor="login" className="text-xs font-semibold text-[#374151] dark:text-slate-300">
+                                Username or email
                             </Label>
                             <Input
-                                id="email"
-                                type="email"
-                                name="email"
+                                id="login"
+                                type="text"
+                                name="login"
                                 required
                                 autoFocus
                                 tabIndex={1}
-                                autoComplete="email"
-                                placeholder="you@agency.gov.ph"
+                                autoComplete="username"
+                                placeholder="Enter your username or email"
                                 className="h-10 rounded-xl border-[#D1D5DB] bg-[#F9FAFB] text-sm focus:border-[#ECC925] focus:ring-1 focus:ring-[#ECC925] dark:border-slate-700 dark:bg-slate-800"
                             />
-                            <InputError message={errors.email} />
+                            <InputError message={errors.login} />
                         </div>
 
                         <div className="space-y-1.5">
