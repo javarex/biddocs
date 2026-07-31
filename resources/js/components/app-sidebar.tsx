@@ -21,7 +21,7 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
-import type { NavItem } from '@/types';
+import type { Auth, NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
     {
@@ -31,33 +31,45 @@ const mainNavItems: NavItem[] = [
     },
 ];
 
+const visibleNavItems = (items: Array<NavItem | null>): NavItem[] =>
+    items.filter((item): item is NavItem => item !== null);
+
 export function AppSidebar() {
-    const { auth } = usePage().props;
-    const administrationItems: NavItem[] = auth.user?.is_super_admin
-        ? [
-              { title: 'Users', href: '/admin/users', icon: Users },
-              {
+    const { auth } = usePage<{ auth: Auth }>().props;
+    const can = (permission: string): boolean =>
+        auth.user?.is_super_admin === true ||
+        auth.permissions.includes(permission);
+    const administrationItems = visibleNavItems([
+        can('users.view')
+            ? { title: 'Users', href: '/admin/users', icon: Users }
+            : null,
+        can('roles.view')
+            ? {
                   title: 'Roles & Permissions',
                   href: '/admin/roles',
                   icon: Shield,
-              },
-              {
+              }
+            : null,
+        can('settings.view')
+            ? {
                   title: 'System Settings',
                   href: '/admin/settings',
                   icon: Settings,
-              },
-          ]
-        : [];
-    const procurementItems: NavItem[] = auth.user?.is_super_admin
-        ? [
-              { title: 'Excel Imports', href: '/admin/imports', icon: Upload },
-              {
+              }
+            : null,
+    ]);
+    const procurementItems = visibleNavItems([
+        can('imports.view')
+            ? { title: 'Excel Imports', href: '/admin/imports', icon: Upload }
+            : null,
+        can('projects.view')
+            ? {
                   title: 'Projects',
                   href: '/admin/projects',
                   icon: FolderKanban,
-              },
-          ]
-        : [];
+              }
+            : null,
+    ]);
 
     return (
         <Sidebar collapsible="icon" variant="inset">

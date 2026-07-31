@@ -17,6 +17,7 @@ class UserAdministrationService
                 'name' => $data['name'],
                 'username' => strtolower($data['username']),
                 'email' => strtolower($data['email']),
+                'email_verified_at' => now(),
                 'password' => Hash::make($data['password']),
                 'is_active' => $data['is_active'] ?? true,
                 'is_super_admin' => $data['is_super_admin'] ?? false,

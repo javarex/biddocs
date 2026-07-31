@@ -29,6 +29,8 @@ class UserManagementTest extends TestCase
         ])->assertRedirect(route('admin.users.index'));
 
         $user = User::where('email', 'new@example.com')->firstOrFail();
+        $this->assertNotNull($user->email_verified_at);
+
         $this->actingAs($admin)->put(route('admin.users.update', $user), [
             'name' => 'Updated User',
             'username' => 'updated-user',

@@ -15,6 +15,7 @@ export type User = {
 
 export type Auth = {
     user: User | null;
+    permissions: string[];
 };
 
 export type Impersonation = {
