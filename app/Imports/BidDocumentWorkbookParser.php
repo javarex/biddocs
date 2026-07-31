@@ -4,6 +4,7 @@ namespace App\Imports;
 
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Reader\Xlsx;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
@@ -60,7 +61,7 @@ class BidDocumentWorkbookParser
                 $headerRow = $this->findHeaderRow($sheet);
                 $subHeaderRow = $this->findSubHeaderRow($sheet, $headerRow);
                 $headers = $this->readHeaders($sheet, $headerRow, $subHeaderRow);
-                $project = $this->readProject($sheet);
+                $project = $this->readProject($sheet, $headerRow);
                 $dataStartRow = $this->findDataStartRow($sheet, $headerRow, $subHeaderRow);
 
                 if ($project['project_name'] === '' || $project['location'] === '' || $project['contract_duration'] === null) {
@@ -183,27 +184,53 @@ class BidDocumentWorkbookParser
     }
 
     /** @return array{project_code: string, project_name: string, project_description: string, source_of_funds: string, location: string, contract_duration: ?float} */
-    private function readProject(Worksheet $sheet): array
+    private function readProject(Worksheet $sheet, int $headerRow): array
     {
         $labels = [];
+        $lastMetadataRow = max(1, $headerRow - 1);
+        $lastMetadataColumn = Coordinate::columnIndexFromString($sheet->getHighestColumn());
 
-        foreach (range(1, 10) as $row) {
-            foreach (['A' => 'B', 'K' => 'L'] as $labelColumn => $valueColumn) {
-                $label = rtrim($this->normalized($this->text($sheet, "{$labelColumn}{$row}")), ':');
-                if ($label !== '') {
-                    $labels[$label] = "{$valueColumn}{$row}";
+        for ($row = 1; $row <= $lastMetadataRow; $row++) {
+            for ($column = 1; $column <= $lastMetadataColumn; $column++) {
+                $label = rtrim($this->normalized($this->text($sheet, Coordinate::stringFromColumnIndex($column).$row)), ':');
+                if ($label === '') {
+                    continue;
+                }
+
+                $valueCell = $this->metadataValueCell($sheet, $row, $column, $lastMetadataColumn);
+                if ($valueCell !== null) {
+                    $labels[$label] = $valueCell;
                 }
             }
         }
 
         return [
-            'project_code' => $this->valueForLabel($sheet, $labels, ['CODE', 'PROJECT CODE']),
-            'project_name' => $this->valueForLabel($sheet, $labels, ['PROJECT', 'PROJECT NAME'], 'B1'),
-            'project_description' => $this->valueForLabel($sheet, $labels, ['PROJECT DESCRIPTION']),
-            'source_of_funds' => $this->valueForLabel($sheet, $labels, ['SOURCE OF FUND', 'SOURCE OF FUNDS', 'FUNDING SOURCE']),
-            'location' => $this->valueForLabel($sheet, $labels, ['LOCATION'], 'B2'),
-            'contract_duration' => $this->numberForLabel($sheet, $labels, ['CONTRACT DURATION'], 'L2'),
+            'project_code' => $this->valueForLabel($sheet, $labels, ['PROJECT CODE', 'CODE', 'PROJECT NUMBER', 'PROJECT NO.']),
+            'project_name' => $this->valueForLabel($sheet, $labels, ['PROJECT NAME', 'NAME OF PROJECT', 'PROJECT TITLE', 'PROJECT'], 'B1'),
+            'project_description' => $this->valueForLabel($sheet, $labels, ['PROJECT DESCRIPTION', 'DESCRIPTION OF PROJECT']),
+            'source_of_funds' => $this->valueForLabel($sheet, $labels, ['SOURCE OF FUNDS', 'SOURCE OF FUND', 'FUNDING SOURCE']),
+            'location' => $this->valueForLabel($sheet, $labels, ['PROJECT LOCATION', 'SITE LOCATION', 'LOCATION', 'PROJECT SITE', 'PLACE OF PROJECT', 'PLACE OF WORK'], 'B2'),
+            'contract_duration' => $this->numberForLabel($sheet, $labels, ['CONTRACT DURATION', 'CONTRACT TIME', 'PROJECT DURATION', 'CONTRACT PERIOD', 'DURATION'], 'L2'),
         ];
+    }
+
+    private function metadataValueCell(Worksheet $sheet, int $row, int $labelColumn, int $lastColumn): ?string
+    {
+        for ($column = $labelColumn + 1; $column <= $lastColumn; $column++) {
+            $cell = Coordinate::stringFromColumnIndex($column).$row;
+            $value = $this->text($sheet, $cell);
+            if ($value === '') {
+                continue;
+            }
+
+            if (Str::endsWith($value, ':')) {
+                return null;
+            }
+
+            return $cell;
+        }
+
+        return null;
     }
 
     /**
@@ -212,10 +239,9 @@ class BidDocumentWorkbookParser
      */
     private function valueForLabel(Worksheet $sheet, array $labels, array $names, ?string $fallback = null): string
     {
-        foreach ($names as $name) {
-            if (isset($labels[$name])) {
-                return $this->text($sheet, $labels[$name]);
-            }
+        $cell = $this->cellForLabel($labels, $names);
+        if ($cell !== null) {
+            return $this->text($sheet, $cell);
         }
 
         return $fallback === null ? '' : $this->text($sheet, $fallback);
@@ -227,13 +253,38 @@ class BidDocumentWorkbookParser
      */
     private function numberForLabel(Worksheet $sheet, array $labels, array $names, string $fallback): ?float
     {
-        foreach ($names as $name) {
-            if (isset($labels[$name])) {
-                return $this->number($sheet, $labels[$name]);
-            }
+        $cell = $this->cellForLabel($labels, $names);
+        if ($cell !== null) {
+            return $this->number($sheet, $cell);
         }
 
         return $this->number($sheet, $fallback);
+    }
+
+    /** @param array<string, string> $labels  @param array<int, string> $names */
+    private function cellForLabel(array $labels, array $names): ?string
+    {
+        foreach ($names as $name) {
+            $expected = $this->normalized($name);
+            if (isset($labels[$expected])) {
+                return $labels[$expected];
+            }
+        }
+
+        foreach ($names as $name) {
+            $expected = $this->normalized($name);
+            if (Str::length($expected) < 8) {
+                continue;
+            }
+
+            foreach ($labels as $label => $cell) {
+                if (Str::startsWith($label, $expected.' ')) {
+                    return $cell;
+                }
+            }
+        }
+
+        return null;
     }
 
     /** @return array<string, mixed> */
@@ -265,13 +316,23 @@ class BidDocumentWorkbookParser
 
     private function number(Worksheet $sheet, string $cell): ?float
     {
-        $value = $sheet->getCell($cell)->getCalculatedValue();
+        return $this->numberValue($sheet->getCell($cell)->getCalculatedValue());
+    }
+
+    private function numberValue(mixed $value): ?float
+    {
         if ($value === null || $value === '') {
             return null;
         }
         $value = str_replace([',', '%'], '', trim((string) $value));
 
-        return is_numeric($value) ? (float) $value : null;
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+
+        return preg_match('/-?\d+(?:\.\d+)?/', $value, $matches) === 1
+            ? (float) $matches[0]
+            : null;
     }
 
     /** @param array<string, mixed> $values */
