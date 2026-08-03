@@ -186,14 +186,8 @@ class BidDocumentService
                 "{$durationWords} ({$project->contract_duration})",
                 $updated,
             ) ?? $updated;
-            $updated = preg_replace('/CW\d{2}-\s*(?:_+|\d{3})?/i', $project->project_code, $updated) ?? $updated;
-            if ($description !== '') {
-                $updated = preg_replace(
-                    '/Construction\s+(?:of\s+)?2[\s-]*classroom\s+with\s+toilet?\s+attached\s+in\s+each\s+room\s+and\s+bundled\s+school(?:\s+furnitures?)?/i',
-                    $description,
-                    $updated,
-                ) ?? $updated;
-            }
+            $updated = preg_replace('/CW\d{2}-\s*(?:_+|\d{3})?/i', trim((string) $project->project_code), $updated) ?? $updated;
+            $updated = $this->replaceProjectDescription($updated, $description);
             if (preg_match('/^The\s+Project\s+title\s+is\b/i', $text) === 1
                 && ! Str::contains(Str::lower($updated), 'required completion period')) {
                 $updated = rtrim($updated)." The required completion period is {$durationWords} ({$project->contract_duration}) calendar days.";
@@ -222,6 +216,21 @@ class BidDocumentService
             }
 
         }
+    }
+
+    private function replaceProjectDescription(string $text, string $description): string
+    {
+        $pattern = 'Construction\s+(?:of\s+)?2[\s-]*classroom\s+with\s+toilet?\s+attached\s+in\s+each\s+room\s+and\s+bundled\s+school(?:\s+furnitures?)?';
+
+        if ($description === '') {
+            $updated = preg_replace('/\s*\(\s*'.$pattern.'\s*\)/i', '', $text) ?? $text;
+
+            return preg_replace('/'.$pattern.'/i', '', $updated) ?? $updated;
+        }
+
+        $updated = preg_replace('/\s*\(\s*'.$pattern.'\s*\)/i', ' '.$description, $text) ?? $text;
+
+        return preg_replace('/'.$pattern.'/i', $description, $updated) ?? $updated;
     }
 
     private function projectTitle(Project $project): string

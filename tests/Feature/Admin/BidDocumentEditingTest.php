@@ -104,6 +104,7 @@ XML);
         }
 
         $this->assertFalse($hasStandaloneCode);
+        $this->assertStringNotContainsString('Civil Works No. CW25-______', $xml);
     }
 
     public function test_super_admin_can_save_text_edits_into_the_downloadable_docx(): void
@@ -228,6 +229,24 @@ XML);
         $this->assertStringNotContainsString('CW25-______', $xml);
         $this->assertStringNotContainsString('Construction of 2-classroom', $xml);
         $this->assertStringNotContainsString('GAA 2026 Basic Education Facilities Program', $xml);
+    }
+
+    public function test_blank_project_description_does_not_keep_template_description(): void
+    {
+        $project = $this->project();
+        $project->update(['project_description' => null]);
+        $path = app(BidDocumentService::class)->generate($project);
+
+        $archive = new ZipArchive;
+        $archive->open($path);
+        $xml = $archive->getFromName('word/document.xml');
+        $archive->close();
+        unlink($path);
+
+        $this->assertIsString($xml);
+        $this->assertStringNotContainsString('Construction of 2-classroom', $xml);
+        $this->assertStringNotContainsString('Construction of a new testing facility', $xml);
+        $this->assertStringNotContainsString('(Construction', $xml);
     }
 
     public function test_normal_users_cannot_save_or_reset_direct_document_edits(): void
