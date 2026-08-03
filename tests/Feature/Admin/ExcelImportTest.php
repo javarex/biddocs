@@ -46,6 +46,8 @@ class ExcelImportTest extends TestCase
         $template = IOFactory::load(resource_path('templates/abc.xlsx'));
         $this->assertSame('Source of Funds:', $template->getSheet(0)->getCell('K3')->getFormattedValue());
         $this->assertSame('', $template->getSheet(0)->getCell('L3')->getFormattedValue());
+        $this->assertSame('', $template->getSheet(0)->getCell('A2')->getFormattedValue());
+        $this->assertSame('', $template->getSheet(0)->getCell('B2')->getFormattedValue());
     }
 
     public function test_super_admin_can_preview_and_commit_a_valid_workbook(): void

@@ -78,6 +78,34 @@ XML);
         parent::tearDown();
     }
 
+    public function test_source_bid_document_template_has_no_code_on_the_front_page(): void
+    {
+        $archive = new ZipArchive;
+        $archive->open(public_path('FINAL Construction of 1 Unit 2 Classroom at Buhi ES, Brgy. Ampawid, Laak.docx'));
+        $xml = $archive->getFromName('word/document.xml');
+        $archive->close();
+
+        $this->assertIsString($xml);
+        $document = new \DOMDocument;
+        $document->loadXML($xml);
+        $xpath = new \DOMXPath($document);
+        $xpath->registerNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main');
+
+        $hasStandaloneCode = false;
+        foreach ($xpath->query('//w:body//w:p') as $paragraph) {
+            $text = '';
+            foreach ($xpath->query('.//w:t', $paragraph) as $node) {
+                $text .= $node->textContent;
+            }
+            if (trim($text) === 'CW25-') {
+                $hasStandaloneCode = true;
+                break;
+            }
+        }
+
+        $this->assertFalse($hasStandaloneCode);
+    }
+
     public function test_super_admin_can_save_text_edits_into_the_downloadable_docx(): void
     {
         $admin = User::factory()->create(['is_super_admin' => true, 'is_active' => true]);
