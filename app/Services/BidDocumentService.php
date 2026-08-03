@@ -193,11 +193,6 @@ class BidDocumentService
                     $description,
                     $updated,
                 ) ?? $updated;
-                $updated = preg_replace(
-                    '/now\s+invites\s+bids\s+for\s+the\s+above\s+Procurement\s+Project/i',
-                    'now invites bids for '.$description,
-                    $updated,
-                ) ?? $updated;
             }
             if (preg_match('/^The\s+Project\s+title\s+is\b/i', $text) === 1
                 && ! Str::contains(Str::lower($updated), 'required completion period')) {
@@ -226,9 +221,6 @@ class BidDocumentService
                 $this->setNodeText($xpath, $paragraph, $updated);
             }
 
-            if ($description !== '' && preg_match('/^INVITATION\s+TO\s+BID\s+FOR\b/i', $text) === 1) {
-                $this->setInvitationDescription($document, $xpath, $paragraph, $description);
-            }
         }
     }
 
@@ -242,39 +234,6 @@ class BidDocumentService
         }
 
         return $name.', '.$location;
-    }
-
-    private function setInvitationDescription(
-        DOMDocument $document,
-        DOMXPath $xpath,
-        DOMElement $title,
-        string $description,
-    ): void {
-        $paragraph = $title->nextSibling;
-        while ($paragraph !== null && ! $paragraph instanceof DOMElement) {
-            $paragraph = $paragraph->nextSibling;
-        }
-
-        if (! $paragraph instanceof DOMElement || $paragraph->localName !== 'p' || $this->nodeText($xpath, $paragraph) !== '') {
-            $paragraph = $document->createElementNS(self::WORD_NAMESPACE, 'w:p');
-            $title->parentNode?->insertBefore($paragraph, $title->nextSibling);
-        }
-
-        $run = $document->createElementNS(self::WORD_NAMESPACE, 'w:r');
-        $titleRunProperties = $xpath->query('./w:r[1]/w:rPr', $title)?->item(0);
-        if ($titleRunProperties instanceof DOMNode) {
-            $runProperties = $document->importNode($titleRunProperties->cloneNode(true), true);
-        } else {
-            $runProperties = $document->createElementNS(self::WORD_NAMESPACE, 'w:rPr');
-        }
-        if ($runProperties instanceof DOMElement && $xpath->query('./w:i', $runProperties)?->length === 0) {
-            $runProperties->appendChild($document->createElementNS(self::WORD_NAMESPACE, 'w:i'));
-        }
-        $run->appendChild($runProperties);
-        $text = $document->createElementNS(self::WORD_NAMESPACE, 'w:t');
-        $text->appendChild($document->createTextNode('('.$description.')'));
-        $run->appendChild($text);
-        $paragraph->appendChild($run);
     }
 
     private function replaceBillOfQuantities(DOMDocument $document, Project $project): void
