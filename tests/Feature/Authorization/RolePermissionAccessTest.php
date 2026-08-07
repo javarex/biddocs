@@ -7,6 +7,7 @@ use App\Models\Role;
 use App\Models\User;
 use Database\Seeders\AuthorizationSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class RolePermissionAccessTest extends TestCase
@@ -29,8 +30,32 @@ class RolePermissionAccessTest extends TestCase
         );
         $user->roles()->attach($role);
 
-        $this->actingAs($user)->get(route('admin.imports.index'))->assertOk();
+        $this->actingAs($user)
+            ->get(route('admin.imports.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('admin/imports/index')
+                ->where('canViewHistory', false)
+                ->missing('histories'));
         $this->actingAs($user)->get(route('admin.projects.index'))->assertOk();
+    }
+
+    public function test_import_history_permission_grants_history_visibility(): void
+    {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'Import History Viewer', 'slug' => 'import-history-viewer']);
+        $role->permissions()->sync(
+            Permission::query()->whereIn('slug', ['imports.view', 'imports.history.view'])->pluck('id'),
+        );
+        $user->roles()->attach($role);
+
+        $this->actingAs($user)
+            ->get(route('admin.imports.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('admin/imports/index')
+                ->where('canViewHistory', true)
+                ->has('histories'));
     }
 
     public function test_user_permissions_do_not_grant_super_admin_pages(): void

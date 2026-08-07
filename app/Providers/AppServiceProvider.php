@@ -48,6 +48,7 @@ class AppServiceProvider extends ServiceProvider
             'roles.delete',
             'settings.view',
             'imports.view',
+            'imports.history.view',
             'imports.create',
             'imports.download_errors',
             'imports.delete',

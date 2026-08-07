@@ -69,7 +69,8 @@ type History = Omit<Preview, 'metadata' | 'failures'> & {
     completed_at: string | null;
 };
 type Props = {
-    histories: { data: History[]; links: PaginationLink[] };
+    canViewHistory: boolean;
+    histories?: { data: History[]; links: PaginationLink[] };
     preview?: Preview | null;
     targetProject?: {
         id: number;
@@ -85,7 +86,8 @@ function formatBytes(bytes: number) {
 }
 
 export default function ImportsIndex({
-    histories,
+    canViewHistory,
+    histories = { data: [], links: [] },
     preview,
     targetProject,
 }: Props) {
@@ -457,88 +459,92 @@ export default function ImportsIndex({
                     </Card>
                 )}
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Import history</CardTitle>
-                        <CardDescription>
-                            Previous validation and processing results.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        {histories.data.length === 0 ? (
-                            <EmptyState message="No imports have been run yet." />
-                        ) : (
-                            <DataTable>
-                                <thead className="bg-muted/50">
-                                    <tr>
-                                        {[
-                                            'File',
-                                            'Project',
-                                            'Mode',
-                                            'Status',
-                                            'Rows',
-                                            'Result',
-                                            'Errors',
-                                        ].map((heading) => (
-                                            <th
-                                                key={heading}
-                                                className="px-4 py-3 font-medium"
-                                            >
-                                                {heading}
-                                            </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y">
-                                    {histories.data.map((history) => (
-                                        <tr key={history.id}>
-                                            <td className="px-4 py-3">
-                                                {history.original_filename}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                {history.project
-                                                    ?.project_name ??
-                                                    'Auto-detected'}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                {history.import_mode}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                {history.status}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                {history.total_rows}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                {history.imported_rows} inserted
-                                                / {history.updated_rows} updated
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                {history.failed_rows +
-                                                    history.duplicate_rows >
-                                                0 ? (
-                                                    <a
-                                                        className="text-primary underline"
-                                                        href={`/admin/imports/${history.id}/errors`}
-                                                    >
-                                                        {history.failed_rows +
-                                                            history.duplicate_rows}{' '}
-                                                        rows
-                                                    </a>
-                                                ) : (
-                                                    '—'
-                                                )}
-                                            </td>
+                {canViewHistory && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Import history</CardTitle>
+                            <CardDescription>
+                                Previous validation and processing results.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            {histories.data.length === 0 ? (
+                                <EmptyState message="No imports have been run yet." />
+                            ) : (
+                                <DataTable>
+                                    <thead className="bg-muted/50">
+                                        <tr>
+                                            {[
+                                                'File',
+                                                'Project',
+                                                'Mode',
+                                                'Status',
+                                                'Rows',
+                                                'Result',
+                                                'Errors',
+                                            ].map((heading) => (
+                                                <th
+                                                    key={heading}
+                                                    className="px-4 py-3 font-medium"
+                                                >
+                                                    {heading}
+                                                </th>
+                                            ))}
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </DataTable>
-                        )}
-                        <div className="mt-4">
-                            <Pagination links={histories.links} />
-                        </div>
-                    </CardContent>
-                </Card>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                        {histories.data.map((history) => (
+                                            <tr key={history.id}>
+                                                <td className="px-4 py-3">
+                                                    {history.original_filename}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {history.project
+                                                        ?.project_name ??
+                                                        'Auto-detected'}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {history.import_mode}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {history.status}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {history.total_rows}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {history.imported_rows}{' '}
+                                                    inserted /{' '}
+                                                    {history.updated_rows}{' '}
+                                                    updated
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {history.failed_rows +
+                                                        history.duplicate_rows >
+                                                    0 ? (
+                                                        <a
+                                                            className="text-primary underline"
+                                                            href={`/admin/imports/${history.id}/errors`}
+                                                        >
+                                                            {history.failed_rows +
+                                                                history.duplicate_rows}{' '}
+                                                            rows
+                                                        </a>
+                                                    ) : (
+                                                        '—'
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </DataTable>
+                            )}
+                            <div className="mt-4">
+                                <Pagination links={histories.links} />
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
             </div>
         </>
     );

@@ -22,6 +22,7 @@ class AuthorizationSeeder extends Seeder
             ['name' => 'Delete roles', 'slug' => 'roles.delete', 'group' => 'Roles'],
             ['name' => 'View settings', 'slug' => 'settings.view', 'group' => 'Settings'],
             ['name' => 'View imports', 'slug' => 'imports.view', 'group' => 'Imports'],
+            ['name' => 'View import history', 'slug' => 'imports.history.view', 'group' => 'Imports'],
             ['name' => 'Create imports', 'slug' => 'imports.create', 'group' => 'Imports'],
             ['name' => 'Download import errors', 'slug' => 'imports.download_errors', 'group' => 'Imports'],
             ['name' => 'Delete import history', 'slug' => 'imports.delete', 'group' => 'Imports'],

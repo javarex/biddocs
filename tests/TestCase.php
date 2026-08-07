@@ -7,6 +7,15 @@ use Laravel\Fortify\Features;
 
 abstract class TestCase extends BaseTestCase
 {
+    protected function beforeRefreshingDatabase(): void
+    {
+        if (app()->environment('testing')
+            && config('database.default') === 'mysql'
+            && config('database.connections.mysql.database') === 'bds') {
+            throw new \LogicException('Refusing to refresh the live bds database during tests.');
+        }
+    }
+
     protected function skipUnlessFortifyHas(string $feature, ?string $message = null): void
     {
         if (! Features::enabled($feature)) {

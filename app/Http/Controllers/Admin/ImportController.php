@@ -163,15 +163,21 @@ class ImportController extends Controller
     /** @param array<string, mixed>|null $preview */
     private function renderImportPage(Request $request, ?Project $project = null, ?array $preview = null): Response
     {
-        return Inertia::render('admin/imports/index', [
-            'histories' => ImportHistory::query()
+        $props = [
+            'canViewHistory' => Gate::allows('imports.history.view'),
+            'preview' => $preview ?? $request->session()->get('import_preview'),
+            'targetProject' => $project?->only(['id', 'project_code', 'project_name', 'location', 'contract_duration']),
+        ];
+
+        if ($props['canViewHistory']) {
+            $props['histories'] = ImportHistory::query()
                 ->with(['importer:id,name', 'project:id,project_code,project_name'])
                 ->when($project, fn ($query) => $query->where('project_id', $project->id))
                 ->latest()
                 ->paginate(10)
-                ->through(fn (ImportHistory $history): array => $this->present($history)),
-            'preview' => $preview ?? $request->session()->get('import_preview'),
-            'targetProject' => $project?->only(['id', 'project_code', 'project_name', 'location', 'contract_duration']),
-        ]);
+                ->through(fn (ImportHistory $history): array => $this->present($history));
+        }
+
+        return Inertia::render('admin/imports/index', $props);
     }
 }
