@@ -8,6 +8,7 @@ import { SuperAdminBadge, StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { impersonateUser } from '@/lib/impersonation';
 
 type UserDetails = {
     id: number;
@@ -47,11 +48,7 @@ export default function ShowUser({ user }: { user: UserDetails }) {
                                     title="Impersonate user?"
                                     description={`You will be signed in as ${user.name}. You can leave impersonation from the banner at the top of the application.`}
                                     confirmLabel="Impersonate"
-                                    onConfirm={() =>
-                                        router.post(
-                                            `/admin/users/${user.id}/impersonate`,
-                                        )
-                                    }
+                                    onConfirm={() => impersonateUser(user.id)}
                                 >
                                     <Button variant="outline">
                                         <LogIn /> Impersonate

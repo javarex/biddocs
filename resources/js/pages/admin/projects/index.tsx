@@ -25,6 +25,7 @@ type ProjectRow = {
     contract_duration: number;
     sections_count: number;
     items_count: number;
+    can_delete: boolean;
 };
 type Props = {
     projects: { data: ProjectRow[]; links: PaginationLink[] };
@@ -159,25 +160,27 @@ export default function ProjectsIndex({ projects, filters }: Props) {
                                                     <Import /> Import / Update
                                                 </Link>
                                             </Button>
-                                            <ConfirmDialog
-                                                title="Delete project?"
-                                                description="This will permanently delete the project and its imported sections and items."
-                                                confirmLabel="Delete"
-                                                destructive
-                                                onConfirm={() =>
-                                                    router.delete(
-                                                        `/admin/projects/${project.id}`,
-                                                    )
-                                                }
-                                            >
-                                                <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    aria-label={`Delete ${project.project_name}`}
+                                            {project.can_delete && (
+                                                <ConfirmDialog
+                                                    title="Delete project?"
+                                                    description="This will permanently delete the project and its imported sections and items."
+                                                    confirmLabel="Delete"
+                                                    destructive
+                                                    onConfirm={() =>
+                                                        router.delete(
+                                                            `/admin/projects/${project.id}`,
+                                                        )
+                                                    }
                                                 >
-                                                    <Trash2 className="size-4 text-destructive" />
-                                                </Button>
-                                            </ConfirmDialog>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        aria-label={`Delete ${project.project_name}`}
+                                                    >
+                                                        <Trash2 className="size-4 text-destructive" />
+                                                    </Button>
+                                                </ConfirmDialog>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

@@ -2,8 +2,10 @@
 
 namespace App\Providers;
 
+use App\Models\Project;
 use App\Models\Role;
 use App\Models\User;
+use App\Policies\ProjectPolicy;
 use App\Policies\RolePolicy;
 use App\Policies\UserPolicy;
 use Carbon\CarbonImmutable;
@@ -35,6 +37,7 @@ class AppServiceProvider extends ServiceProvider
         });
         Gate::policy(User::class, UserPolicy::class);
         Gate::policy(Role::class, RolePolicy::class);
+        Gate::policy(Project::class, ProjectPolicy::class);
 
         foreach ([
             'dashboard.view',

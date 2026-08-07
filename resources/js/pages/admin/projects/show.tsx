@@ -46,6 +46,7 @@ type Props = {
         project_description: string | null;
         location: string;
         contract_duration: number;
+        can_delete: boolean;
         sections: Section[];
     };
 };
@@ -95,21 +96,23 @@ export default function ProjectsShow({ project }: Props) {
                                     <FileSpreadsheet /> Excel Imports
                                 </Link>
                             </Button>
-                            <ConfirmDialog
-                                title="Delete project?"
-                                description="This will permanently delete the project and its imported sections and items."
-                                confirmLabel="Delete"
-                                destructive
-                                onConfirm={() =>
-                                    router.delete(
-                                        `/admin/projects/${project.id}`,
-                                    )
-                                }
-                            >
-                                <Button variant="destructive">
-                                    <Trash2 /> Delete project
-                                </Button>
-                            </ConfirmDialog>
+                            {project.can_delete && (
+                                <ConfirmDialog
+                                    title="Delete project?"
+                                    description="This will permanently delete the project and its imported sections and items."
+                                    confirmLabel="Delete"
+                                    destructive
+                                    onConfirm={() =>
+                                        router.delete(
+                                            `/admin/projects/${project.id}`,
+                                        )
+                                    }
+                                >
+                                    <Button variant="destructive">
+                                        <Trash2 /> Delete project
+                                    </Button>
+                                </ConfirmDialog>
+                            )}
                         </div>
                     }
                 />

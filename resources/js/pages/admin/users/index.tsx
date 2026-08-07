@@ -9,6 +9,7 @@ import type { PaginationLink } from '@/components/pagination';
 import { SuperAdminBadge, StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { impersonateUser } from '@/lib/impersonation';
 
 type UserRow = {
     id: number;
@@ -136,9 +137,7 @@ export default function UsersIndex({ users, filters }: Props) {
                                                     description={`You will be signed in as ${user.name}. You can leave impersonation from the banner at the top of the application.`}
                                                     confirmLabel="Impersonate"
                                                     onConfirm={() =>
-                                                        router.post(
-                                                            `/admin/users/${user.id}/impersonate`,
-                                                        )
+                                                        impersonateUser(user.id)
                                                     }
                                                 >
                                                     <Button

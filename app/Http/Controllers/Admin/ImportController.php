@@ -30,7 +30,7 @@ class ImportController extends Controller
         return $this->renderImportPage($request);
     }
 
-    public function preview(StoreImportRequest $request): Response
+    public function preview(StoreImportRequest $request): RedirectResponse
     {
         Gate::authorize('imports.create');
 
@@ -62,14 +62,14 @@ class ImportController extends Controller
         return $this->renderImportPage(request(), $project);
     }
 
-    public function previewForProject(StoreImportRequest $request, Project $project): Response
+    public function previewForProject(StoreImportRequest $request, Project $project): RedirectResponse
     {
         Gate::authorize('projects.import');
 
         return $this->createPreview($request, $project);
     }
 
-    private function createPreview(StoreImportRequest $request, ?Project $project = null): Response
+    private function createPreview(StoreImportRequest $request, ?Project $project = null): RedirectResponse
     {
         $file = $request->file('file');
         $storedPath = $file->storeAs('imports', uniqid('workbook_', true).'.'.$file->getClientOriginalExtension(), 'local');
@@ -84,8 +84,12 @@ class ImportController extends Controller
         ]);
 
         $history = $this->imports->preview($history);
+        $preview = ImportPreviewResult::fromHistory($history)->toArray();
 
-        return $this->renderImportPage($request, $project, ImportPreviewResult::fromHistory($history)->toArray());
+        return to_route(
+            $project ? 'admin.projects.import' : 'admin.imports.index',
+            $project ? ['project' => $project] : [],
+        )->with('import_preview', $preview);
     }
 
     public function commit(Request $request, ImportHistory $importHistory): RedirectResponse
@@ -154,6 +158,7 @@ class ImportController extends Controller
             'duplicate_rows' => $history->duplicate_rows,
             'skipped_rows' => $history->skipped_rows,
             'failed_rows' => $history->failed_rows,
+            'error_message' => $history->error_message,
             'completed_at' => $history->completed_at !== null ? Carbon::parse((string) $history->completed_at)->toISOString() : null,
             'importer' => $history->importer?->only(['id', 'name']),
             'project' => $history->project?->only(['id', 'project_code', 'project_name']),

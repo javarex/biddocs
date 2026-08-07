@@ -40,6 +40,7 @@ class ProjectController extends Controller
                 'contract_duration' => $project->contract_duration,
                 'sections_count' => $project->sections_count,
                 'items_count' => $project->items_count,
+                'can_delete' => Gate::forUser($request->user())->allows('delete', $project),
             ]);
 
         return Inertia::render('admin/projects/index', [
@@ -66,6 +67,7 @@ class ProjectController extends Controller
                 'project_description' => $project->project_description,
                 'location' => $project->location,
                 'contract_duration' => $project->contract_duration,
+                'can_delete' => Gate::allows('delete', $project),
                 'sections' => $project->sections->map(fn (Section $section): array => [
                     'id' => $section->id,
                     'section' => $section->section,
@@ -90,7 +92,7 @@ class ProjectController extends Controller
 
     public function destroy(Project $project): RedirectResponse
     {
-        Gate::authorize('projects.delete');
+        Gate::authorize('delete', $project);
 
         if ($project->bidDocumentVersion !== null) {
             Storage::disk('local')->delete($project->bidDocumentVersion->stored_path);

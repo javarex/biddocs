@@ -74,10 +74,11 @@ class BidDocumentImportService
                 $project = $this->projectFor($parsed['project'], $history);
                 if ($project === null) {
                     $projectCode = $this->projectCode($parsed['project']);
-                    $project = Project::query()->updateOrCreate(
-                        ['project_code' => $projectCode],
-                        [...$parsed['project'], 'project_code' => $projectCode],
-                    );
+                    $project = Project::query()->create([
+                        ...$parsed['project'],
+                        'project_code' => $projectCode,
+                        'created_by' => $history->imported_by,
+                    ]);
                 } else {
                     $projectDetails = [];
                     if (trim((string) ($parsed['project']['project_code'] ?? '')) !== '') {
@@ -93,6 +94,7 @@ class BidDocumentImportService
                         $project->update($projectDetails);
                     }
                 }
+                $history->update(['project_id' => $project->id]);
                 $sections = [];
                 $subSections = [];
                 $existingItems = $this->existingItems($project);

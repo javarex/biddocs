@@ -1,6 +1,7 @@
-import { router, usePage } from '@inertiajs/react';
+import { usePage } from '@inertiajs/react';
 import { ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { leaveImpersonation } from '@/lib/impersonation';
 import type { Impersonation } from '@/types';
 
 export default function ImpersonationBanner() {
@@ -19,11 +20,7 @@ export default function ImpersonationBanner() {
                     <strong>{impersonation.originalUser?.email}</strong>
                 </span>
             </div>
-            <Button
-                size="sm"
-                variant="outline"
-                onClick={() => router.post('/impersonation/leave')}
-            >
+            <Button size="sm" variant="outline" onClick={leaveImpersonation}>
                 Leave impersonation
             </Button>
         </div>

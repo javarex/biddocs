@@ -1,6 +1,8 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import { Download, FileSpreadsheet, Upload, X } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { toast } from 'sonner';
+import AlertError from '@/components/alert-error';
 import ConfirmDialog from '@/components/confirm-dialog';
 import DataTable from '@/components/data-table';
 import EmptyState from '@/components/empty-state';
@@ -67,6 +69,7 @@ type History = Omit<Preview, 'metadata' | 'failures'> & {
     importer: { id: number; name: string } | null;
     project: { id: number; project_code: string; project_name: string } | null;
     completed_at: string | null;
+    error_message: string | null;
 };
 type Props = {
     canViewHistory: boolean;
@@ -95,6 +98,7 @@ export default function ImportsIndex({
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
     const [templateFilename, setTemplateFilename] = useState('ABC Template');
+    const [importError, setImportError] = useState<string | null>(null);
     const form = useForm<{ file: File | null; mode: string }>({
         file: null,
         mode: 'insert',
@@ -117,6 +121,16 @@ export default function ImportsIndex({
             {
                 forceFormData: true,
                 preserveScroll: true,
+                onError: (errors) => {
+                    const message =
+                        errors.file ??
+                        errors.import ??
+                        Object.values(errors)[0];
+
+                    if (message) {
+                        toast.error(message);
+                    }
+                },
             },
         );
     };
@@ -128,6 +142,25 @@ export default function ImportsIndex({
             `/admin/imports/templates/abc?filename=${encodeURIComponent(filename)}`,
         );
         setTemplateDialogOpen(false);
+    };
+    const commitPreview = (previewId: number) => {
+        setImportError(null);
+        router.post(
+            `/admin/imports/${previewId}/commit`,
+            {},
+            {
+                preserveScroll: true,
+                onError: (errors) => {
+                    const message =
+                        errors.import ??
+                        Object.values(errors)[0] ??
+                        'The import failed. No project data was changed.';
+
+                    setImportError(message);
+                    toast.error(message);
+                },
+            },
+        );
     };
 
     return (
@@ -364,6 +397,9 @@ export default function ImportsIndex({
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-5">
+                            {importError && (
+                                <AlertError errors={[importError]} />
+                            )}
                             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                                 {[
                                     ['Detected', preview.total_rows],
@@ -397,11 +433,7 @@ export default function ImportsIndex({
                                     title="Commit this import?"
                                     description="Valid rows will be written using the selected mode. Invalid and duplicate rows will remain in the error report."
                                     confirmLabel="Commit import"
-                                    onConfirm={() =>
-                                        router.post(
-                                            `/admin/imports/${preview.id}/commit`,
-                                        )
-                                    }
+                                    onConfirm={() => commitPreview(preview.id)}
                                 >
                                     <Button
                                         disabled={
@@ -413,7 +445,13 @@ export default function ImportsIndex({
                                 </ConfirmDialog>
                                 <Button
                                     variant="outline"
-                                    onClick={() => router.get('/admin/imports')}
+                                    onClick={() =>
+                                        router.get(
+                                            targetProject
+                                                ? `/admin/projects/${targetProject.id}/import`
+                                                : '/admin/imports',
+                                        )
+                                    }
                                 >
                                     <X /> Clear preview
                                 </Button>
@@ -507,7 +545,16 @@ export default function ImportsIndex({
                                                     {history.import_mode}
                                                 </td>
                                                 <td className="px-4 py-3">
-                                                    {history.status}
+                                                    <p>{history.status}</p>
+                                                    {history.status ===
+                                                        'failed' &&
+                                                        history.error_message && (
+                                                            <p className="mt-1 max-w-xs text-xs text-destructive">
+                                                                {
+                                                                    history.error_message
+                                                                }
+                                                            </p>
+                                                        )}
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     {history.total_rows}
