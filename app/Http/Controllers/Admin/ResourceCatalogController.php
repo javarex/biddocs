@@ -23,6 +23,7 @@ class ResourceCatalogController extends Controller
         'equipments' => ['title' => 'Equipment', 'fields' => ['equipment', 'rental']],
         'materials' => ['title' => 'Materials', 'fields' => ['itemcode', 'category_id', 'description', 'unit']],
         'prices' => ['title' => 'Prices', 'fields' => ['itemcode', 'price', 'effective_from', 'effective_to']],
+        'signatories' => ['title' => 'Signatories', 'fields' => ['cats_no', 'name', 'position']],
     ];
 
     public function index(Request $request, string $catalog): Response
@@ -35,7 +36,7 @@ class ResourceCatalogController extends Controller
             'catalog' => $catalog,
             'title' => $definition['title'],
             'fields' => $definition['fields'],
-            'records' => DB::table($catalog)->select([$catalog === 'categories' ? 'IDCATEGORY as id' : 'id', ...$definition['fields']])
+            'records' => DB::table($catalog)->select([$this->key($catalog).' as id', ...$definition['fields']])
                 ->when($search !== '', function ($query) use ($definition, $search): void {
                     $query->where(function ($query) use ($definition, $search): void {
                         foreach ($definition['fields'] as $field) {
@@ -71,7 +72,7 @@ class ResourceCatalogController extends Controller
         return back()->with('success', 'Record created successfully.');
     }
 
-    public function update(Request $request, string $catalog, int $record): RedirectResponse
+    public function update(Request $request, string $catalog, string $record): RedirectResponse
     {
         Gate::authorize('libraries.update');
         $this->find($catalog, $record);
@@ -84,7 +85,7 @@ class ResourceCatalogController extends Controller
         return back()->with('success', 'Record updated successfully.');
     }
 
-    public function destroy(string $catalog, int $record): RedirectResponse
+    public function destroy(string $catalog, string $record): RedirectResponse
     {
         Gate::authorize('libraries.delete');
         $this->find($catalog, $record);
@@ -95,7 +96,11 @@ class ResourceCatalogController extends Controller
             DB::table($catalog)->where($this->key($catalog), $record)->delete();
         } catch (QueryException $exception) {
             if (in_array((string) $exception->getCode(), ['23000', '23503'], true)) {
-                throw ValidationException::withMessages(['delete' => 'This record is in use by a DUPA or price record. Remove those links before deleting it.']);
+                throw ValidationException::withMessages([
+                    'delete' => $catalog === 'signatories'
+                        ? 'This signatory is assigned to a project and cannot be deleted.'
+                        : 'This record is in use by a DUPA or price record. Remove those links before deleting it.',
+                ]);
             }
             throw $exception;
         }
@@ -127,9 +132,14 @@ class ResourceCatalogController extends Controller
 
     private function key(string $catalog): string
     {
-        return $catalog === 'categories' ? 'IDCATEGORY' : 'id';
+        return match ($catalog) {
+            'categories' => 'IDCATEGORY',
+            'signatories' => 'cats_no',
+            default => 'id',
+        };
     }
 
+    /** @return array{title: string, fields: list<string>} */
     private function definition(string $catalog): array
     {
         abort_unless(isset(self::CATALOGS[$catalog]), 404);
@@ -137,13 +147,14 @@ class ResourceCatalogController extends Controller
         return self::CATALOGS[$catalog];
     }
 
-    private function find(string $catalog, int $record): void
+    private function find(string $catalog, string $record): void
     {
         $this->definition($catalog);
         abort_unless(DB::table($catalog)->where($this->key($catalog), $record)->exists(), 404);
     }
 
-    private function validated(Request $request, string $catalog, ?int $record = null): array
+    /** @return array<string, mixed> */
+    private function validated(Request $request, string $catalog, string|int|null $record = null): array
     {
         return $request->validate(match ($catalog) {
             'categories' => [
@@ -174,6 +185,13 @@ class ResourceCatalogController extends Controller
                 'effective_from' => ['required', 'date_format:Y-m-d'],
                 'effective_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:effective_from'],
             ],
+            'signatories' => [
+                'cats_no' => ['required', 'string', 'max:64',
+                    $record === null ? Rule::unique('signatories', 'cats_no') : Rule::in([(string) $record])],
+                'name' => ['required', 'string', 'max:255'],
+                'position' => ['required', 'string', 'max:255'],
+            ],
+            default => throw new \InvalidArgumentException('Unknown resource catalog.'),
         });
     }
 }

@@ -10,7 +10,7 @@ class SubSection extends Model
 {
     public $timestamps = false;
 
-    protected $fillable = ['section_id', 'sub_section'];
+    protected $fillable = ['section_id', 'sub_section', 'sort_order'];
 
     /** @return BelongsTo<Section, $this> */
     public function section(): BelongsTo

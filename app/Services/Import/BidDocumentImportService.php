@@ -130,6 +130,10 @@ class BidDocumentImportService
                     $imported++;
                 }
 
+                if ($imported > 0 || $updated > 0) {
+                    $project->update(['estimates_updated_at' => now()]);
+                }
+
                 return compact('imported', 'updated');
             });
 
@@ -186,6 +190,8 @@ class BidDocumentImportService
                 if ($mode === 'insert') {
                     $errors[] = 'A matching record already exists; insert-only mode will not overwrite it.';
                     $isDuplicate = true;
+                } elseif ($stored->estimates->contains('calculation_mode', 'resources')) {
+                    $errors[] = 'This DUPA uses resource-calculated estimates and cannot be overwritten by a summary workbook import.';
                 }
             } elseif ($mode === 'update') {
                 $errors[] = 'No matching stored record exists for update-existing mode.';
@@ -258,7 +264,8 @@ class BidDocumentImportService
     {
         $sectionIds = $project->sections()->pluck('id');
 
-        return ProjectItem::query()->whereIn('section_id', $sectionIds)->get()->keyBy(fn (ProjectItem $item): string => $this->itemKey($item->pay_item_no))->all();
+        return ProjectItem::query()->with('estimates')->whereIn('section_id', $sectionIds)->get()
+            ->keyBy(fn (ProjectItem $item): string => $this->itemKey($item->pay_item_no))->all();
     }
 
     /** @param array<int, array<string, mixed>> $failures */

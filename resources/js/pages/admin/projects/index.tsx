@@ -4,6 +4,8 @@ import {
     FileText,
     FolderKanban,
     Import,
+    Pencil,
+    Plus,
     Search,
     Trash2,
 } from 'lucide-react';
@@ -26,13 +28,19 @@ type ProjectRow = {
     sections_count: number;
     items_count: number;
     can_delete: boolean;
+    can_edit: boolean;
 };
 type Props = {
     projects: { data: ProjectRow[]; links: PaginationLink[] };
     filters: { search: string };
+    can_create: boolean;
 };
 
-export default function ProjectsIndex({ projects, filters }: Props) {
+export default function ProjectsIndex({
+    projects,
+    filters,
+    can_create,
+}: Props) {
     const search = useForm({ search: filters.search });
     const submitSearch = (event: React.FormEvent) => {
         event.preventDefault();
@@ -49,6 +57,15 @@ export default function ProjectsIndex({ projects, filters }: Props) {
                 <PageHeader
                     title="Projects"
                     description="Review procurement projects and import additional or updated project items."
+                    action={
+                        can_create ? (
+                            <Button asChild>
+                                <Link href="/admin/projects/create">
+                                    <Plus /> Create project
+                                </Link>
+                            </Button>
+                        ) : undefined
+                    }
                 />
 
                 <form onSubmit={submitSearch} className="flex max-w-xl gap-2">
@@ -142,6 +159,19 @@ export default function ProjectsIndex({ projects, filters }: Props) {
                                                     <Eye /> View
                                                 </Link>
                                             </Button>
+                                            {project.can_edit && (
+                                                <Button
+                                                    asChild
+                                                    size="sm"
+                                                    variant="outline"
+                                                >
+                                                    <Link
+                                                        href={`/admin/projects/${project.id}/edit`}
+                                                    >
+                                                        <Pencil /> Edit
+                                                    </Link>
+                                                </Button>
+                                            )}
                                             <Button
                                                 asChild
                                                 size="sm"

@@ -42,6 +42,7 @@ type Props = {
     editor: {
         can_edit: boolean;
         has_saved_version: boolean;
+        is_outdated: boolean;
         revision: number;
         edited_at: string | null;
         edited_by: { id: number; name: string } | null;
@@ -749,6 +750,17 @@ export default function ProjectBidDocuments({
                         )}
                     </AlertDescription>
                 </Alert>
+                {editor.is_outdated && (
+                    <Alert variant="destructive" className="print:hidden">
+                        <AlertTitle>Saved document is out of date</AlertTitle>
+                        <AlertDescription>
+                            Project details or estimates changed after this Word
+                            document was saved. Use Regenerate from project data
+                            to replace the saved edits with the current
+                            calculated project.
+                        </AlertDescription>
+                    </Alert>
+                )}
 
                 {saveError && (
                     <Alert variant="destructive" className="print:hidden">

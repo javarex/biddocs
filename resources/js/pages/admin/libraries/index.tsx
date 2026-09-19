@@ -21,7 +21,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-type RecordRow = { id: number; [key: string]: string | number | null };
+type RecordRow = { id: string | number; [key: string]: string | number | null };
 type Props = {
     catalog: string;
     title: string;
@@ -50,6 +50,9 @@ const labels: Record<string, string> = {
     price: 'Price',
     effective_from: 'Effective from',
     effective_to: 'Effective to',
+    cats_no: 'CATS number',
+    name: 'Name',
+    position: 'Position',
 };
 
 export default function LibraryPage(props: Props) {
@@ -76,7 +79,7 @@ function Library({
     );
     const [search, setSearch] = useState(filters.search);
     const [open, setOpen] = useState(false);
-    const [editing, setEditing] = useState<number | null>(null);
+    const [editing, setEditing] = useState<string | number | null>(null);
     const [deleteError, setDeleteError] = useState('');
     const syncForm = useForm<Record<string, string>>({});
     const form = useForm<Record<string, string>>(
@@ -383,7 +386,10 @@ function Library({
                                                 ].includes(field)
                                             }
                                             readOnly={
-                                                field === 'IDCATEGORY' &&
+                                                [
+                                                    'IDCATEGORY',
+                                                    'cats_no',
+                                                ].includes(field) &&
                                                 editing !== null
                                             }
                                             type={

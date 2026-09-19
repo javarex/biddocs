@@ -117,6 +117,11 @@ export function AppSidebar() {
                                 href: '/admin/libraries/prices',
                                 icon: BookOpen,
                             },
+                            {
+                                title: 'Signatories',
+                                href: '/admin/libraries/signatories',
+                                icon: Users,
+                            },
                         ]}
                     />
                 )}

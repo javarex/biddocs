@@ -10,7 +10,7 @@ class Section extends Model
 {
     public $timestamps = false;
 
-    protected $fillable = ['section', 'project_id'];
+    protected $fillable = ['section', 'project_id', 'sort_order'];
 
     /** @return BelongsTo<Project, $this> */
     public function project(): BelongsTo

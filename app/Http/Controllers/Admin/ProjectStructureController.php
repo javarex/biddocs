@@ -1,0 +1,138 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Models\Project;
+use App\Models\ProjectItem;
+use App\Models\Section;
+use App\Models\SubSection;
+use App\Services\DupaEstimateService;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
+
+class ProjectStructureController extends Controller
+{
+    public function __construct(private readonly DupaEstimateService $estimates) {}
+
+    public function storeSection(Request $request, Project $project): RedirectResponse
+    {
+        Gate::authorize('update', $project);
+        $data = $request->validate(['section' => ['required', 'string', 'max:10000']]);
+        $project->sections()->create($data + ['sort_order' => (int) $project->sections()->max('sort_order') + 1]);
+        $this->touch($project);
+
+        return back()->with('success', 'Section added.');
+    }
+
+    public function updateSection(Request $request, Section $section): RedirectResponse
+    {
+        Gate::authorize('update', $section->project);
+        $section->update($request->validate([
+            'section' => ['required', 'string', 'max:10000'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+        ]));
+        $this->touch($section->project);
+
+        return back()->with('success', 'Section updated.');
+    }
+
+    public function destroySection(Section $section): RedirectResponse
+    {
+        Gate::authorize('update', $section->project);
+        $project = $section->project;
+        $section->delete();
+        $this->touch($project);
+
+        return back()->with('success', 'Section and its DUPA items deleted.');
+    }
+
+    public function storeSubSection(Request $request, Section $section): RedirectResponse
+    {
+        Gate::authorize('update', $section->project);
+        $data = $request->validate(['sub_section' => ['required', 'string', 'max:10000']]);
+        $section->subSections()->create($data + ['sort_order' => (int) $section->subSections()->max('sort_order') + 1]);
+        $this->touch($section->project);
+
+        return back()->with('success', 'Subsection added.');
+    }
+
+    public function updateSubSection(Request $request, SubSection $subSection): RedirectResponse
+    {
+        Gate::authorize('update', $subSection->section->project);
+        $subSection->update($request->validate([
+            'sub_section' => ['required', 'string', 'max:10000'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+        ]));
+        $this->touch($subSection->section->project);
+
+        return back()->with('success', 'Subsection updated.');
+    }
+
+    public function destroySubSection(SubSection $subSection): RedirectResponse
+    {
+        Gate::authorize('update', $subSection->section->project);
+        $project = $subSection->section->project;
+        $subSection->delete();
+        $this->touch($project);
+
+        return back()->with('success', 'Subsection and its DUPA items deleted.');
+    }
+
+    public function storeDupa(Request $request, Section $section): RedirectResponse
+    {
+        Gate::authorize('update', $section->project);
+        $data = $request->validate([
+            'sub_section_id' => ['nullable', 'integer', Rule::exists('sub_sections', 'id')->where('section_id', $section->id)],
+            'pay_item_no' => ['required', 'string', 'max:45'],
+            'description' => ['required', 'string', 'max:10000'],
+            'unit' => ['required', 'string', 'max:45'],
+        ]);
+        $dupa = ProjectItem::query()->create($data + [
+            'section_id' => $section->id,
+            'sort_order' => (int) $section->projectItems()->max('sort_order') + 1,
+            'qty' => 0, 'estimated_direct_cost' => 0, 'ocm' => 0, 'profit' => 0,
+            'total_markup_percentage' => 0, 'total_markup_value' => 0, 'vat_five_percent' => 0,
+            'total_indirect_cost' => 0, 'total_cost' => 0, 'unit_cost_adjusted' => 0,
+        ]);
+        $this->estimates->initialize($dupa);
+        $this->touch($section->project);
+
+        return to_route('admin.dupas.edit', $dupa)->with('success', 'DUPA item created. Add its estimate resources.');
+    }
+
+    public function updateDupa(Request $request, ProjectItem $dupa): RedirectResponse
+    {
+        $project = $dupa->section->project;
+        Gate::authorize('update', $project);
+        $data = $request->validate([
+            'section_id' => ['required', 'integer', Rule::exists('sections', 'id')->where('project_id', $project->id)],
+            'sub_section_id' => ['nullable', 'integer', Rule::exists('sub_sections', 'id')->where('section_id', $request->integer('section_id'))],
+            'pay_item_no' => ['required', 'string', 'max:45'],
+            'description' => ['required', 'string', 'max:10000'],
+            'unit' => ['required', 'string', 'max:45'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+        ]);
+        $dupa->update($data);
+        $this->touch($project);
+
+        return back()->with('success', 'DUPA details updated.');
+    }
+
+    public function destroyDupa(ProjectItem $dupa): RedirectResponse
+    {
+        $project = $dupa->section->project;
+        Gate::authorize('update', $project);
+        $dupa->delete();
+        $this->touch($project);
+
+        return to_route('admin.projects.edit', $project)->with('success', 'DUPA item deleted.');
+    }
+
+    private function touch(Project $project): void
+    {
+        $project->update(['estimates_updated_at' => now()]);
+    }
+}

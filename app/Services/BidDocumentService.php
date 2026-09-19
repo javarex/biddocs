@@ -19,6 +19,8 @@ class BidDocumentService
 
     private const EDIT_BOOKMARK_PREFIX = 'BDS_EDIT_';
 
+    public function __construct(private readonly DupaEstimateService $estimates) {}
+
     public function generate(Project $project): string
     {
         $template = (string) config('bid-documents.template');
@@ -30,9 +32,12 @@ class BidDocumentService
         }
 
         $project->load([
-            'sections' => fn ($query) => $query->orderBy('id'),
-            'sections.subSections' => fn ($query) => $query->orderBy('id'),
-            'sections.subSections.projectItems' => fn ($query) => $query->orderBy('id'),
+            'sections' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'),
+            'sections.projectItems' => fn ($query) => $query->whereNull('sub_section_id')->orderBy('sort_order')->orderBy('id'),
+            'sections.projectItems.estimates',
+            'sections.subSections' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'),
+            'sections.subSections.projectItems' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'),
+            'sections.subSections.projectItems.estimates',
         ]);
 
         $temporary = tempnam(storage_path('app/private'), 'bid-doc-');
@@ -149,7 +154,8 @@ class BidDocumentService
     private function replaceProjectContent(DOMDocument $document, Project $project): void
     {
         $xpath = $this->xpath($document);
-        $total = (float) $project->items()->sum('total_cost');
+        $totals = $this->estimates->projectTotals($project);
+        $total = $totals['ADD']['grand_total'] + $totals['NON_ADD']['grand_total'];
         $durationWords = $this->numberWords($project->contract_duration);
         $amountWords = $this->currencyWords($total);
         $projectTitle = $this->projectTitle($project);
@@ -300,17 +306,45 @@ class BidDocumentService
 
             foreach ($project->sections as $section) {
                 $this->insertSectionRow($document, $xpath, $table, $total, $sectionTemplate, $section->section);
+                foreach ($section->projectItems as $item) {
+                    $this->insertEstimateRows($document, $xpath, $table, $total, $itemTemplate, $item);
+                }
                 foreach ($section->subSections as $subSection) {
                     if (Str::lower(trim($subSection->sub_section)) !== 'imported items') {
                         $this->insertSectionRow($document, $xpath, $table, $total, $sectionTemplate, $subSection->sub_section);
                     }
                     foreach ($subSection->projectItems as $item) {
-                        $this->insertItemRow($document, $xpath, $table, $total, $itemTemplate, $item);
+                        $this->insertEstimateRows($document, $xpath, $table, $total, $itemTemplate, $item);
                     }
                 }
             }
 
-            $totalValue = (float) $project->items()->sum('total_cost');
+            $projectTotals = $this->estimates->projectTotals($project);
+            $chargeRows = [
+                'POL' => 'pol_amount',
+                'Pre-engineering' => 'pre_engineering_amount',
+                'Supervision' => 'supervision_amount',
+                'Contingencies' => 'contingencies_amount',
+                'Miscellaneous' => 'miscellaneous_amount',
+            ];
+            $hasCharges = collect($projectTotals)->contains(fn (array $side) => $side['charges_total'] > 0);
+            if ($hasCharges) {
+                $this->insertSectionRow($document, $xpath, $table, $total, $sectionTemplate, 'PROJECT-LEVEL CHARGES');
+                foreach (['ADD', 'NON_ADD'] as $type) {
+                    foreach ($chargeRows as $label => $key) {
+                        $amount = (float) $projectTotals[$type][$key];
+                        if ($amount > 0) {
+                            $this->insertValuesRow($document, $xpath, $table, $total, $itemTemplate, [
+                                $type === 'ADD' ? 'CHG-A' : 'CHG-N',
+                                $label.' ('.str_replace('_', '-', $type).')',
+                                'l.s.', '1.00', number_format($amount, 2), number_format($amount, 2),
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            $totalValue = $projectTotals['ADD']['grand_total'] + $projectTotals['NON_ADD']['grand_total'];
             $this->setNodeText($xpath, $total, 'TOTAL BID AMOUNT (PHP) '.number_format($totalValue, 2));
             $next = $total->nextSibling;
             while ($next !== null && ! $next instanceof DOMElement) {
@@ -333,7 +367,32 @@ class BidDocumentService
         }
     }
 
-    private function insertItemRow(DOMDocument $document, DOMXPath $xpath, DOMElement $table, DOMElement $before, DOMElement $template, ProjectItem $item): void
+    private function insertEstimateRows(DOMDocument $document, DOMXPath $xpath, DOMElement $table, DOMElement $before, DOMElement $template, ProjectItem $item): void
+    {
+        $estimates = $item->estimates->filter(fn ($estimate) => $estimate->quantity > 0 || $estimate->total_cost > 0)->values();
+        if ($estimates->isEmpty()) {
+            $this->insertValuesRow($document, $xpath, $table, $before, $template, [
+                $item->pay_item_no, $item->description, $item->unit, '0.00', '0.00', '0.00',
+            ]);
+
+            return;
+        }
+
+        $showType = $estimates->count() > 1;
+        foreach ($estimates as $estimate) {
+            $this->insertValuesRow($document, $xpath, $table, $before, $template, [
+                $item->pay_item_no.($showType ? ' ('.str_replace('_', '-', $estimate->estimate_type).')' : ''),
+                $item->description,
+                $item->unit,
+                number_format($estimate->quantity, 2),
+                number_format($estimate->unit_cost, 2),
+                number_format($estimate->total_cost, 2),
+            ]);
+        }
+    }
+
+    /** @param list<string> $values */
+    private function insertValuesRow(DOMDocument $document, DOMXPath $xpath, DOMElement $table, DOMElement $before, DOMElement $template, array $values): void
     {
         $row = $document->importNode($template->cloneNode(true), true);
         if (! $row instanceof DOMElement) {
@@ -343,14 +402,6 @@ class BidDocumentService
         if ($cells === false) {
             return;
         }
-        $values = [
-            $item->pay_item_no,
-            $item->description,
-            $item->unit,
-            number_format($item->qty, 2),
-            number_format($item->unit_cost_adjusted, 2),
-            number_format($item->total_cost, 2),
-        ];
         foreach ($values as $index => $value) {
             $cell = $cells->item($index);
             if ($cell instanceof DOMElement) {

@@ -11,6 +11,7 @@ use Illuminate\Validation\ValidationException;
 
 class MaterialSyncService
 {
+    /** @param list<int> $categories */
     public function sync(array $categories): int
     {
         $baseUrl = rtrim((string) config('services.pis.url'), '/');

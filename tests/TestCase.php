@@ -7,7 +7,7 @@ use Laravel\Fortify\Features;
 
 abstract class TestCase extends BaseTestCase
 {
-    protected function beforeRefreshingDatabase(): void
+    protected function beforeRefreshingDatabase()
     {
         if (app()->environment('testing')
             && config('database.default') === 'mysql'

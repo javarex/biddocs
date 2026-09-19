@@ -261,7 +261,10 @@ class BidDocumentWorkbookParser
         return $this->number($sheet, $fallback);
     }
 
-    /** @param array<string, string> $labels  @param array<int, string> $names */
+    /**
+     * @param  array<string, string>  $labels
+     * @param  array<int, string>  $names
+     */
     private function cellForLabel(array $labels, array $names): ?string
     {
         foreach ($names as $name) {

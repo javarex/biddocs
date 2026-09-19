@@ -31,6 +31,8 @@ class AuthorizationSeeder extends Seeder
             ['name' => 'Download import errors', 'slug' => 'imports.download_errors', 'group' => 'Imports'],
             ['name' => 'Delete import history', 'slug' => 'imports.delete', 'group' => 'Imports'],
             ['name' => 'View projects', 'slug' => 'projects.view', 'group' => 'Projects'],
+            ['name' => 'Create projects', 'slug' => 'projects.create', 'group' => 'Projects'],
+            ['name' => 'Update owned projects', 'slug' => 'projects.update', 'group' => 'Projects'],
             ['name' => 'Import project data', 'slug' => 'projects.import', 'group' => 'Projects'],
             ['name' => 'View project bid documents', 'slug' => 'projects.bid_docs.view', 'group' => 'Projects'],
             ['name' => 'Edit project bid documents', 'slug' => 'projects.bid_docs.edit', 'group' => 'Projects'],

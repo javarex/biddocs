@@ -7,7 +7,9 @@ use App\Http\Requests\Admin\UpdateBidDocumentRequest;
 use App\Models\BidDocumentVersion;
 use App\Models\Project;
 use App\Services\BidDocumentService;
+use App\Services\DupaEstimateService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
@@ -18,20 +20,24 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ProjectBidDocumentController extends Controller
 {
-    public function __construct(private readonly BidDocumentService $documents) {}
+    public function __construct(
+        private readonly BidDocumentService $documents,
+        private readonly DupaEstimateService $estimates,
+    ) {}
 
     public function show(Project $project): Response
     {
         Gate::authorize('projects.bid_docs.view');
         $version = $project->bidDocumentVersion()->with('editor:id,name')->first();
         $hasSavedVersion = $version !== null && Storage::disk('local')->exists($version->stored_path);
+        $totals = $this->estimates->projectTotals($project);
 
         return Inertia::render('admin/projects/bid-docs', [
             'project' => [
                 ...$project->only(['id', 'project_code', 'project_name', 'project_description', 'source_of_funds', 'location', 'contract_duration']),
                 'sections_count' => $project->sections()->count(),
                 'items_count' => $project->items()->count(),
-                'total_cost' => (float) $project->items()->sum('total_cost'),
+                'total_cost' => $totals['ADD']['grand_total'] + $totals['NON_ADD']['grand_total'],
             ],
             // Keep this URL relative so the browser preserves the current HTTPS
             // scheme even when the app is behind a reverse proxy.
@@ -42,6 +48,8 @@ class ProjectBidDocumentController extends Controller
             'editor' => [
                 'can_edit' => Gate::allows('projects.bid_docs.edit'),
                 'has_saved_version' => $hasSavedVersion,
+                'is_outdated' => $hasSavedVersion && $project->estimates_updated_at !== null
+                    && Carbon::parse((string) $project->estimates_updated_at)->isAfter($version->edited_at),
                 'revision' => $version->revision ?? 0,
                 'edited_at' => $hasSavedVersion ? $version->edited_at->toISOString() : null,
                 'edited_by' => $hasSavedVersion ? $version->editor?->only(['id', 'name']) : null,
