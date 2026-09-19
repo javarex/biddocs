@@ -14,6 +14,10 @@ return [
     |
     */
 
+    'pis' => [
+        'url' => env('PIS_URL', 'http://localhost:8001'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

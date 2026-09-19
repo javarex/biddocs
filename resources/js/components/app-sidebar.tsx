@@ -2,6 +2,7 @@ import { Link } from '@inertiajs/react';
 import { usePage } from '@inertiajs/react';
 import {
     LayoutGrid,
+    BookOpen,
     Settings,
     Shield,
     Users,
@@ -87,6 +88,38 @@ export function AppSidebar() {
 
             <SidebarContent>
                 <NavMain items={mainNavItems} label="Workspace" />
+                {can('libraries.view') && (
+                    <NavMain
+                        label="Libraries"
+                        items={[
+                            {
+                                title: 'Categories',
+                                href: '/admin/libraries/categories',
+                                icon: BookOpen,
+                            },
+                            {
+                                title: 'Labor',
+                                href: '/admin/libraries/labors',
+                                icon: Users,
+                            },
+                            {
+                                title: 'Equipment',
+                                href: '/admin/libraries/equipments',
+                                icon: Settings,
+                            },
+                            {
+                                title: 'Materials',
+                                href: '/admin/libraries/materials',
+                                icon: BookOpen,
+                            },
+                            {
+                                title: 'Prices',
+                                href: '/admin/libraries/prices',
+                                icon: BookOpen,
+                            },
+                        ]}
+                    />
+                )}
                 {administrationItems.length > 0 && (
                     <NavMain
                         items={administrationItems}

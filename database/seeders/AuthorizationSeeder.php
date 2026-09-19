@@ -11,6 +11,10 @@ class AuthorizationSeeder extends Seeder
     public function run(): void
     {
         $permissions = [
+            ['name' => 'View libraries', 'slug' => 'libraries.view', 'group' => 'Libraries'],
+            ['name' => 'Create libraries', 'slug' => 'libraries.create', 'group' => 'Libraries'],
+            ['name' => 'Update libraries', 'slug' => 'libraries.update', 'group' => 'Libraries'],
+            ['name' => 'Delete libraries', 'slug' => 'libraries.delete', 'group' => 'Libraries'],
             ['name' => 'View dashboard', 'slug' => 'dashboard.view', 'group' => 'Dashboard'],
             ['name' => 'View users', 'slug' => 'users.view', 'group' => 'Users'],
             ['name' => 'Create users', 'slug' => 'users.create', 'group' => 'Users'],

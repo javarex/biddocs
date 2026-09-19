@@ -40,6 +40,10 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Project::class, ProjectPolicy::class);
 
         foreach ([
+            'libraries.view',
+            'libraries.create',
+            'libraries.update',
+            'libraries.delete',
             'dashboard.view',
             'users.view',
             'users.create',

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\ImportController;
 use App\Http\Controllers\Admin\ProjectBidDocumentController;
 use App\Http\Controllers\Admin\ProjectController;
+use App\Http\Controllers\Admin\ResourceCatalogController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SystemSettingsController;
 use App\Http\Controllers\Admin\UserController;
@@ -20,6 +21,17 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
 
     Route::prefix('admin')->name('admin.')->group(function () {
+        Route::post('libraries/materials/sync', [ResourceCatalogController::class, 'syncMaterials'])->name('libraries.materials.sync');
+
+        Route::post('libraries/categories/sync', [ResourceCatalogController::class, 'syncCategories'])->name('libraries.categories.sync');
+
+        Route::prefix('libraries/{catalog}')->where(['catalog' => 'labors|equipments|materials|prices|categories'])->name('libraries.')->group(function () {
+            Route::get('/', [ResourceCatalogController::class, 'index'])->name('index');
+            Route::post('/', [ResourceCatalogController::class, 'store'])->name('store');
+            Route::put('/{record}', [ResourceCatalogController::class, 'update'])->whereNumber('record')->name('update');
+            Route::delete('/{record}', [ResourceCatalogController::class, 'destroy'])->whereNumber('record')->name('destroy');
+        });
+
         Route::middleware(['super.admin'])->group(function () {
             Route::resource('users', UserController::class)->except(['create', 'store', 'show', 'edit', 'update', 'destroy']);
             Route::get('users/create', [UserController::class, 'create'])->name('users.create');
