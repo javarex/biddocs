@@ -5,9 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
-class Material extends Model
+class Item extends Model
 {
-    protected $table = 'materials';
+    protected $table = 'items';
 
     public $timestamps = false;
 
@@ -16,7 +16,7 @@ class Material extends Model
     /** @return BelongsToMany<ProjectItem, $this> */
     public function dupas(): BelongsToMany
     {
-        return $this->belongsToMany(ProjectItem::class, 'material_dupa', 'material_id', 'dupa_id')
-            ->withPivot(['id', 'description']);
+        return $this->belongsToMany(ProjectItem::class, 'material_dupa', 'item_id', 'dupa_id')
+            ->withPivot(['id', 'designation', 'unit', 'qty', 'unit_cost', 'group']);
     }
 }

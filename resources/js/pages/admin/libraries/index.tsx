@@ -4,12 +4,15 @@ import ConfirmDialog from '@/components/confirm-dialog';
 import DataTable from '@/components/data-table';
 import EmptyState from '@/components/empty-state';
 import InputError from '@/components/input-error';
-import MaterialSyncDialog from '@/components/material-sync-dialog';
-import type { SyncCategory } from '@/components/material-sync-dialog';
+import ItemSyncDialog from '@/components/item-sync-dialog';
+import type { SyncCategory } from '@/components/item-sync-dialog';
 import PageHeader from '@/components/page-header';
 import Pagination from '@/components/pagination';
 import type { PaginationLink } from '@/components/pagination';
+import { StatusBadge } from '@/components/status-badge';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogContent,
@@ -21,15 +24,31 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-type RecordRow = { id: string | number; [key: string]: string | number | null };
+type RecordValue = string | number | boolean | string[] | null;
+type RecordRow = { id: string | number; [key: string]: RecordValue };
+type SignatoryRole = {
+    key: string;
+    label: string;
+    cats_no: string | null;
+    name: string | null;
+};
+type SystemUser = {
+    id: number;
+    name: string;
+    username: string;
+    is_active: boolean;
+};
 type Props = {
     catalog: string;
     title: string;
     fields: string[];
+    displayFields: string[];
     records: { data: RecordRow[]; links: PaginationLink[]; total: number };
     filters: { search: string };
-    materials: { itemcode: string; description: string }[];
+    items: { itemcode: string; description: string }[];
     categories: SyncCategory[];
+    signatoryRoles: SignatoryRole[];
+    systemUsers: SystemUser[];
     syncMessage?: string | null;
     can: { create: boolean; update: boolean; delete: boolean; sync: boolean };
 };
@@ -48,12 +67,18 @@ const labels: Record<string, string> = {
     description: 'Description',
     unit: 'Unit',
     price: 'Price',
+    unit_cost: 'Unit Cost',
     effective_from: 'Effective from',
     effective_to: 'Effective to',
     cats_no: 'CATS number',
     name: 'Name',
     position: 'Position',
+    user_id: 'Linked user account',
+    roles: 'Current roles',
 };
+
+const recordRoles = (record: RecordRow): string[] =>
+    Array.isArray(record.roles) ? record.roles : [];
 
 export default function LibraryPage(props: Props) {
     return <Library key={props.catalog} {...props} />;
@@ -63,11 +88,14 @@ function Library({
     catalog,
     title,
     fields,
+    displayFields,
     records,
     filters,
-    materials,
+    items,
     syncMessage,
     categories,
+    signatoryRoles,
+    systemUsers,
     can,
 }: Props) {
     const url = `/admin/libraries/${catalog}`;
@@ -82,8 +110,10 @@ function Library({
     const [editing, setEditing] = useState<string | number | null>(null);
     const [deleteError, setDeleteError] = useState('');
     const syncForm = useForm<Record<string, string>>({});
-    const form = useForm<Record<string, string>>(
-        Object.fromEntries(fields.map((field) => [field, ''])),
+    const form = useForm<Record<string, string | string[]>>(
+        Object.fromEntries(
+            fields.map((field) => [field, field === 'roles' ? [] : '']),
+        ),
     );
     const showForm = (record?: RecordRow) => {
         setEditing(record?.id ?? null);
@@ -92,9 +122,14 @@ function Library({
             Object.fromEntries(
                 fields.map((field) => [
                     field,
-                    String(
-                        record?.[field] ?? (field === 'is_active' ? '1' : ''),
-                    ),
+                    field === 'roles'
+                        ? record
+                            ? recordRoles(record)
+                            : []
+                        : String(
+                              record?.[field] ??
+                                  (field === 'is_active' ? '1' : ''),
+                          ),
                 ]),
             ),
         );
@@ -125,8 +160,8 @@ function Library({
                                         : 'Sync categories'}
                                 </Button>
                             )}
-                            {catalog === 'materials' && can.sync && (
-                                <MaterialSyncDialog categories={categories} />
+                            {catalog === 'items' && can.sync && (
+                                <ItemSyncDialog categories={categories} />
                             )}
                             {can.create && (
                                 <Button onClick={() => showForm()}>
@@ -174,7 +209,7 @@ function Library({
                     <DataTable>
                         <thead className="bg-muted/50">
                             <tr>
-                                {fields.map((field) => (
+                                {displayFields.map((field) => (
                                     <th
                                         key={field}
                                         className="px-4 py-3 font-medium"
@@ -184,7 +219,9 @@ function Library({
                                             : labels[field]}
                                     </th>
                                 ))}
-                                {(can.update || can.delete) && (
+                                {(can.update ||
+                                    (can.delete &&
+                                        catalog !== 'signatories')) && (
                                     <th className="px-4 py-3 font-medium">
                                         Actions
                                     </th>
@@ -194,23 +231,70 @@ function Library({
                         <tbody className="divide-y">
                             {records.data.map((record) => (
                                 <tr key={record.id}>
-                                    {fields.map((field) => (
+                                    {displayFields.map((field) => (
                                         <td
                                             key={field}
                                             className="max-w-md px-4 py-3 whitespace-normal"
                                         >
-                                            {field === 'is_active'
-                                                ? Number(record[field]) === 1
-                                                    ? 'Active'
-                                                    : 'Inactive'
-                                                : field === 'category_id'
-                                                  ? (categoryDescriptions.get(
+                                            {field === 'roles' ? (
+                                                <div className="flex flex-wrap gap-1">
+                                                    {recordRoles(record)
+                                                        .length ? (
+                                                        recordRoles(record).map(
+                                                            (role) => (
+                                                                <Badge
+                                                                    key={role}
+                                                                    variant="secondary"
+                                                                >
+                                                                    {signatoryRoles.find(
+                                                                        (
+                                                                            item,
+                                                                        ) =>
+                                                                            item.key ===
+                                                                            role,
+                                                                    )?.label ??
+                                                                        role}
+                                                                </Badge>
+                                                            ),
+                                                        )
+                                                    ) : (
+                                                        <span>—</span>
+                                                    )}
+                                                </div>
+                                            ) : field === 'is_active' ? (
+                                                <StatusBadge
+                                                    active={
+                                                        Number(
+                                                            record[field],
+                                                        ) === 1
+                                                    }
+                                                />
+                                            ) : field === 'user_id' ? (
+                                                (systemUsers.find(
+                                                    (user) =>
+                                                        user.id ===
                                                         Number(record[field]),
-                                                    ) ?? 'Unknown category')
-                                                  : (record[field] ?? '—')}
+                                                )?.username ?? '—')
+                                            ) : field === 'category_id' ? (
+                                                (categoryDescriptions.get(
+                                                    Number(record[field]),
+                                                ) ?? 'Unknown category')
+                                            ) : field === 'unit_cost' &&
+                                              record[field] !== null ? (
+                                                Number(
+                                                    record[field],
+                                                ).toLocaleString('en-PH', {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                })
+                                            ) : (
+                                                String(record[field] ?? '—')
+                                            )}
                                         </td>
                                     ))}
-                                    {(can.update || can.delete) && (
+                                    {(can.update ||
+                                        (can.delete &&
+                                            catalog !== 'signatories')) && (
                                         <td className="px-4 py-3">
                                             <div className="flex gap-2">
                                                 {can.update && (
@@ -224,37 +308,106 @@ function Library({
                                                         Edit
                                                     </Button>
                                                 )}
-                                                {can.delete && (
-                                                    <ConfirmDialog
-                                                        title="Delete record?"
-                                                        description="This permanently deletes the selected library record. Records in use cannot be deleted."
-                                                        confirmLabel="Delete"
-                                                        destructive
-                                                        onConfirm={() => {
-                                                            setDeleteError('');
-                                                            router.delete(
-                                                                `${url}/${record.id}`,
-                                                                {
-                                                                    preserveScroll: true,
-                                                                    onError: (
-                                                                        errors,
-                                                                    ) =>
-                                                                        setDeleteError(
-                                                                            errors.delete ??
-                                                                                'Unable to delete this record.',
-                                                                        ),
-                                                                },
-                                                            );
-                                                        }}
-                                                    >
-                                                        <Button
-                                                            size="sm"
-                                                            variant="destructive"
+                                                {catalog === 'signatories' &&
+                                                    can.update && (
+                                                        <ConfirmDialog
+                                                            title={`${Number(record.is_active) === 1 ? 'Deactivate' : 'Activate'} signatory?`}
+                                                            description={
+                                                                Number(
+                                                                    record.is_active,
+                                                                ) === 1
+                                                                    ? 'This person will no longer be available for new projects. Existing projects keep their assignment.'
+                                                                    : 'This person will be available in the library again. Assign role tags separately as needed.'
+                                                            }
+                                                            confirmLabel={
+                                                                Number(
+                                                                    record.is_active,
+                                                                ) === 1
+                                                                    ? 'Deactivate'
+                                                                    : 'Activate'
+                                                            }
+                                                            onConfirm={() =>
+                                                                router.put(
+                                                                    `${url}/${record.id}`,
+                                                                    {
+                                                                        cats_no:
+                                                                            record.cats_no,
+                                                                        name: record.name,
+                                                                        position:
+                                                                            record.position,
+                                                                        user_id:
+                                                                            record.user_id,
+                                                                        is_active:
+                                                                            Number(
+                                                                                record.is_active,
+                                                                            ) ===
+                                                                            1
+                                                                                ? '0'
+                                                                                : '1',
+                                                                        roles:
+                                                                            Number(
+                                                                                record.is_active,
+                                                                            ) ===
+                                                                            1
+                                                                                ? []
+                                                                                : recordRoles(
+                                                                                      record,
+                                                                                  ),
+                                                                    },
+                                                                    {
+                                                                        preserveScroll: true,
+                                                                    },
+                                                                )
+                                                            }
                                                         >
-                                                            Delete
-                                                        </Button>
-                                                    </ConfirmDialog>
-                                                )}
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                            >
+                                                                {Number(
+                                                                    record.is_active,
+                                                                ) === 1
+                                                                    ? 'Deactivate'
+                                                                    : 'Activate'}
+                                                            </Button>
+                                                        </ConfirmDialog>
+                                                    )}
+                                                {can.delete &&
+                                                    catalog !==
+                                                        'signatories' && (
+                                                        <ConfirmDialog
+                                                            title="Delete record?"
+                                                            description="This permanently deletes the selected library record. Records in use cannot be deleted."
+                                                            confirmLabel="Delete"
+                                                            destructive
+                                                            onConfirm={() => {
+                                                                setDeleteError(
+                                                                    '',
+                                                                );
+                                                                router.delete(
+                                                                    `${url}/${record.id}`,
+                                                                    {
+                                                                        preserveScroll: true,
+                                                                        onError:
+                                                                            (
+                                                                                errors,
+                                                                            ) =>
+                                                                                setDeleteError(
+                                                                                    errors.delete ??
+                                                                                        'Unable to delete this record.',
+                                                                                ),
+                                                                    },
+                                                                );
+                                                            }}
+                                                        >
+                                                            <Button
+                                                                size="sm"
+                                                                variant="destructive"
+                                                            >
+                                                                Delete
+                                                            </Button>
+                                                        </ConfirmDialog>
+                                                    )}
                                             </div>
                                         </td>
                                     )}
@@ -302,54 +455,182 @@ function Library({
                         }}
                     >
                         {fields.map((field) => {
+                            if (field === 'roles') {
+                                const selectedRoles = Array.isArray(
+                                    form.data.roles,
+                                )
+                                    ? form.data.roles
+                                    : [];
+
+                                return (
+                                    <div key={field} className="space-y-3">
+                                        <Label>{labels[field]}</Label>
+                                        <div className="space-y-3 rounded-md border p-3">
+                                            {signatoryRoles.map((role) => {
+                                                const checked =
+                                                    selectedRoles.includes(
+                                                        role.key,
+                                                    );
+                                                const replacement =
+                                                    checked &&
+                                                    role.cats_no !== null &&
+                                                    role.cats_no !==
+                                                        String(editing ?? '');
+                                                const replacementBlocked =
+                                                    !can.update &&
+                                                    role.cats_no !== null &&
+                                                    role.cats_no !==
+                                                        String(editing ?? '');
+
+                                                return (
+                                                    <div
+                                                        key={role.key}
+                                                        className="space-y-1"
+                                                    >
+                                                        <div className="flex items-center gap-2">
+                                                            <Checkbox
+                                                                id={`role-${role.key}`}
+                                                                checked={
+                                                                    checked
+                                                                }
+                                                                disabled={
+                                                                    form.data
+                                                                        .is_active ===
+                                                                        '0' ||
+                                                                    replacementBlocked
+                                                                }
+                                                                onCheckedChange={(
+                                                                    value,
+                                                                ) =>
+                                                                    form.setData(
+                                                                        'roles',
+                                                                        value
+                                                                            ? [
+                                                                                  ...selectedRoles,
+                                                                                  role.key,
+                                                                              ]
+                                                                            : selectedRoles.filter(
+                                                                                  (
+                                                                                      selected,
+                                                                                  ) =>
+                                                                                      selected !==
+                                                                                      role.key,
+                                                                              ),
+                                                                    )
+                                                                }
+                                                            />
+                                                            <Label
+                                                                htmlFor={`role-${role.key}`}
+                                                                className="font-normal"
+                                                            >
+                                                                {role.label}
+                                                            </Label>
+                                                        </div>
+                                                        {replacement && (
+                                                            <p className="pl-6 text-xs text-amber-700 dark:text-amber-400">
+                                                                Replaces{' '}
+                                                                {role.name ??
+                                                                    role.cats_no}{' '}
+                                                                as the current
+                                                                role holder.
+                                                            </p>
+                                                        )}
+                                                        {replacementBlocked && (
+                                                            <p className="pl-6 text-xs text-muted-foreground">
+                                                                Update
+                                                                permission is
+                                                                required to
+                                                                replace{' '}
+                                                                {role.name ??
+                                                                    role.cats_no}
+                                                                .
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                            {form.data.is_active === '0' && (
+                                                <p className="text-xs text-muted-foreground">
+                                                    Inactive signatories cannot
+                                                    hold current roles.
+                                                </p>
+                                            )}
+                                        </div>
+                                        <InputError
+                                            message={form.errors.roles}
+                                        />
+                                    </div>
+                                );
+                            }
+
                             const options =
-                                field === 'is_active'
-                                    ? [
-                                          { value: '1', label: 'Active' },
-                                          { value: '0', label: 'Inactive' },
-                                      ]
-                                    : field === 'types'
+                                field === 'user_id'
+                                    ? systemUsers.map((user) => ({
+                                          value: String(user.id),
+                                          label: `${user.name} (${user.username})${user.is_active ? '' : ' — inactive'}`,
+                                      }))
+                                    : field === 'is_active'
                                       ? [
-                                            {
-                                                value: 'Contract',
-                                                label: 'Contract',
-                                            },
-                                            { value: 'Admin', label: 'Admin' },
+                                            { value: '1', label: 'Active' },
+                                            { value: '0', label: 'Inactive' },
                                         ]
-                                      : field === 'itemcode' &&
-                                          catalog === 'prices'
-                                        ? materials.map((material) => ({
-                                              value: material.itemcode,
-                                              label: `${material.itemcode} — ${material.description}`,
-                                          }))
-                                        : null;
+                                      : field === 'types'
+                                        ? [
+                                              {
+                                                  value: 'Contract',
+                                                  label: 'Contract',
+                                              },
+                                              {
+                                                  value: 'Admin',
+                                                  label: 'Admin',
+                                              },
+                                          ]
+                                        : field === 'itemcode' &&
+                                            catalog === 'prices'
+                                          ? items.map((item) => ({
+                                                value: item.itemcode,
+                                                label: `${item.itemcode} — ${item.description}`,
+                                            }))
+                                          : null;
 
                             return (
                                 <div key={field} className="space-y-2">
                                     <Label htmlFor={field}>
                                         {labels[field]}
-                                        {['effective_to', 'fccode'].includes(
-                                            field,
-                                        )
+                                        {[
+                                            'effective_to',
+                                            'fccode',
+                                            'user_id',
+                                        ].includes(field)
                                             ? ' (optional)'
                                             : ''}
                                     </Label>
                                     {options ? (
                                         <select
                                             id={field}
-                                            required
+                                            required={field !== 'user_id'}
                                             className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                                            value={form.data[field]}
-                                            onChange={(event) =>
+                                            value={String(
+                                                form.data[field] ?? '',
+                                            )}
+                                            onChange={(event) => {
                                                 form.setData(
                                                     field,
                                                     event.target.value,
-                                                )
-                                            }
+                                                );
+
+                                                if (
+                                                    field === 'is_active' &&
+                                                    event.target.value === '0'
+                                                ) {
+                                                    form.setData('roles', []);
+                                                }
+                                            }}
                                         >
                                             <option value="">
-                                                Select{' '}
-                                                {labels[field].toLowerCase()}
+                                                {field === 'user_id'
+                                                    ? 'No linked user account'
+                                                    : `Select ${labels[field].toLowerCase()}`}
                                             </option>
                                             {options.map((option) => (
                                                 <option
@@ -368,7 +649,9 @@ function Library({
                                             className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
                                             id={field}
                                             required
-                                            value={form.data[field]}
+                                            value={String(
+                                                form.data[field] ?? '',
+                                            )}
                                             onChange={(event) =>
                                                 form.setData(
                                                     field,
@@ -412,7 +695,11 @@ function Library({
                                                 ].includes(field)
                                                     ? 1
                                                     : field === 'effective_to'
-                                                      ? form.data.effective_from
+                                                      ? String(
+                                                            form.data
+                                                                .effective_from ??
+                                                                '',
+                                                        )
                                                       : [
                                                               'rates',
                                                               'rental',
@@ -431,7 +718,9 @@ function Library({
                                                       ? '0.01'
                                                       : 'any'
                                             }
-                                            value={form.data[field]}
+                                            value={String(
+                                                form.data[field] ?? '',
+                                            )}
                                             onChange={(event) =>
                                                 form.setData(
                                                     field,
@@ -449,10 +738,10 @@ function Library({
                                     )}
                                     {catalog === 'prices' &&
                                         field === 'itemcode' &&
-                                        materials.length === 0 && (
+                                        items.length === 0 && (
                                             <p className="text-sm text-muted-foreground">
-                                                Create a material in the
-                                                Materials library first.
+                                                Create an item in the Items
+                                                library first.
                                             </p>
                                         )}
                                     <InputError message={form.errors[field]} />

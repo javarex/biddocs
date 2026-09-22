@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Equipment;
+use App\Models\Item;
 use App\Models\Labor;
-use App\Models\Material;
 use App\Models\Miscellaneous;
 use App\Models\Project;
 use App\Models\ProjectItem;
@@ -32,9 +32,24 @@ class ProjectEstimateController extends Controller
             'estimates' => fn ($query) => $query->orderBy('estimate_type'),
             'estimates.labors' => fn ($query) => $query->orderBy('sort_order'),
             'estimates.equipment' => fn ($query) => $query->orderBy('sort_order'),
-            'estimates.materials' => fn ($query) => $query->orderBy('sort_order'),
-            'estimates.materials.breakdowns' => fn ($query) => $query->orderBy('sort_order'),
+            'estimates.items' => fn ($query) => $query->orderBy('sort_order'),
         ]);
+        $orderedIds = ProjectItem::query()
+            ->select('dupas.id')
+            ->join('sections', 'sections.id', '=', 'dupas.section_id')
+            ->leftJoin('sub_sections', 'sub_sections.id', '=', 'dupas.sub_section_id')
+            ->where('sections.project_id', $project->id)
+            ->orderBy('sections.sort_order')
+            ->orderBy('sections.id')
+            ->orderByRaw('CASE WHEN dupas.sub_section_id IS NULL THEN 0 ELSE 1 END')
+            ->orderBy('sub_sections.sort_order')
+            ->orderBy('sub_sections.id')
+            ->orderBy('dupas.sort_order')
+            ->orderBy('dupas.id')
+            ->pluck('dupas.id')
+            ->map(fn ($id): int => (int) $id)
+            ->values();
+        $position = $orderedIds->search((int) $dupa->id);
 
         return Inertia::render('admin/projects/dupa-edit', [
             'project' => $project->only(['id', 'project_code', 'project_name']),
@@ -46,16 +61,29 @@ class ProjectEstimateController extends Controller
             'catalogs' => [
                 'labors' => Labor::query()->orderBy('manpower')->get(['id', 'manpower', 'rates', 'types']),
                 'equipment' => Equipment::query()->orderBy('equipment')->get(['id', 'equipment', 'rental']),
-                'materials' => Material::query()->orderBy('description')->get(['id', 'itemcode', 'description', 'unit'])
-                    ->map(function (Material $material): array {
-                        $price = DB::table('prices')->where('itemcode', $material->itemcode)
-                            ->where('effective_from', '<=', now()->toDateString())
-                            ->where(fn ($query) => $query->whereNull('effective_to')->orWhere('effective_to', '>=', now()->toDateString()))
-                            ->orderByDesc('effective_from')->value('price');
+                'items' => Item::query()->orderBy('description')->get(['id', 'itemcode', 'description', 'unit'])
+                    ->map(function (Item $item): array {
+                        $price = $this->currentOrLatestPrice($item->itemcode);
 
-                        return [...$material->toArray(), 'price' => (float) ($price ?? 0)];
+                        return [...$item->toArray(), 'price' => (float) ($price ?? 0)];
                     }),
             ],
+            'itemGroups' => DB::table('material_dupa')
+                ->join('dupas', 'dupas.id', '=', 'material_dupa.dupa_id')
+                ->join('sections', 'sections.id', '=', 'dupas.section_id')
+                ->where('sections.project_id', $project->id)
+                ->whereNotNull('material_dupa.group')
+                ->where('material_dupa.group', '<>', '')
+                ->distinct()
+                ->orderBy('material_dupa.group')
+                ->pluck('material_dupa.group'),
+            'navigation' => [
+                'previous_id' => $position !== false && $position > 0 ? $orderedIds[$position - 1] : null,
+                'next_id' => $position !== false && $position < $orderedIds->count() - 1 ? $orderedIds[$position + 1] : null,
+                'position' => $position === false ? 1 : $position + 1,
+                'total' => $orderedIds->count(),
+            ],
+            'canCreateResources' => Gate::allows('libraries.create'),
         ]);
     }
 
@@ -100,20 +128,13 @@ class ProjectEstimateController extends Controller
             'equipment.*.no_of_days' => ['required', 'numeric', 'min:0'],
             'equipment.*.rental_unit_cost' => ['required', 'numeric', 'min:0'],
             'equipment.*.is_included' => ['required', 'boolean'],
-            'materials' => ['array'],
-            'materials.*.material_id' => ['required', 'integer', Rule::exists('materials', 'id')],
-            'materials.*.description' => ['required', 'string', 'max:10000'],
-            'materials.*.unit' => ['required', 'string', 'max:45'],
-            'materials.*.qty' => ['required', 'numeric', 'min:0'],
-            'materials.*.unit_cost' => ['required', 'numeric', 'min:0'],
-            'materials.*.multiplier' => ['required', 'numeric', 'min:0'],
-            'materials.*.is_included' => ['required', 'boolean'],
-            'materials.*.breakdowns' => ['array'],
-            'materials.*.breakdowns.*.designation' => ['required', 'string', 'max:255'],
-            'materials.*.breakdowns.*.unit' => ['required', 'string', 'max:45'],
-            'materials.*.breakdowns.*.qty' => ['required', 'numeric', 'min:0'],
-            'materials.*.breakdowns.*.unit_cost' => ['nullable', 'numeric', 'min:0'],
+            'items' => ['array'],
+            'items.*.item_id' => ['required', 'integer', Rule::exists('items', 'id')],
+            'items.*.qty' => ['required', 'numeric', 'min:0'],
+            'items.*.group' => ['nullable', 'string', 'max:255'],
+            'items.*.is_included' => ['required', 'boolean'],
         ]);
+        $data['items'] = $this->hydrateCatalogItems($data['items'] ?? []);
         $this->estimates->save($dupa, $type, $data);
 
         return back()->with('success', "{$type} estimate updated.");
@@ -153,5 +174,71 @@ class ProjectEstimateController extends Controller
         });
 
         return back()->with('success', 'Project charges updated.');
+    }
+
+    /**
+     * @param  list<array{item_id: int, qty: mixed, group?: string|null, is_included: bool}>  $rows
+     * @return list<array<string, mixed>>
+     */
+    private function hydrateCatalogItems(array $rows): array
+    {
+        $items = Item::query()
+            ->whereIn('id', collect($rows)->pluck('item_id')->unique())
+            ->get(['id', 'itemcode', 'description', 'unit'])
+            ->keyBy('id');
+        $latestPrices = DB::table('prices')
+            ->whereIn('itemcode', $items->pluck('itemcode'))
+            ->orderBy('itemcode')
+            ->orderByDesc('effective_from')
+            ->orderByDesc('id')
+            ->get(['itemcode', 'price'])
+            ->unique('itemcode')
+            ->keyBy('itemcode');
+        $activePrices = DB::table('prices')
+            ->whereIn('itemcode', $items->pluck('itemcode'))
+            ->where('effective_from', '<=', now()->toDateString())
+            ->where(fn ($query) => $query->whereNull('effective_to')->orWhere('effective_to', '>=', now()->toDateString()))
+            ->orderBy('itemcode')
+            ->orderByDesc('effective_from')
+            ->orderByDesc('id')
+            ->get(['itemcode', 'price'])
+            ->unique('itemcode')
+            ->keyBy('itemcode');
+
+        return collect($rows)->map(function (array $row, int $index) use ($items, $activePrices, $latestPrices): array {
+            $item = $items->get((int) $row['item_id']);
+            $price = $item
+                ? ($activePrices->get($item->itemcode) ?? $latestPrices->get($item->itemcode))
+                : null;
+            if (! $item || ! $price) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.item_id" => 'The selected item does not have a price history.',
+                ]);
+            }
+
+            return [
+                ...$row,
+                'designation' => $item->description,
+                'unit' => $item->unit,
+                'unit_cost' => $price->price,
+                'group' => filled($row['group'] ?? null) ? trim((string) $row['group']) : null,
+            ];
+        })->all();
+    }
+
+    private function currentOrLatestPrice(string $itemcode): mixed
+    {
+        $prices = DB::table('prices')->where('itemcode', $itemcode);
+        $activePrice = (clone $prices)
+            ->where('effective_from', '<=', now()->toDateString())
+            ->where(fn ($query) => $query->whereNull('effective_to')->orWhere('effective_to', '>=', now()->toDateString()))
+            ->orderByDesc('effective_from')
+            ->orderByDesc('id')
+            ->value('price');
+
+        return $activePrice ?? $prices
+            ->orderByDesc('effective_from')
+            ->orderByDesc('id')
+            ->value('price');
     }
 }

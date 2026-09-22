@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MaterialDupa extends Model
 {
@@ -16,7 +15,7 @@ class MaterialDupa extends Model
 
     protected function casts(): array
     {
-        return ['qty' => 'float', 'unit_cost' => 'float', 'multiplier' => 'float', 'is_included' => 'boolean'];
+        return ['qty' => 'float', 'unit_cost' => 'float', 'is_included' => 'boolean'];
     }
 
     /** @return BelongsTo<DupaEstimate, $this> */
@@ -31,15 +30,9 @@ class MaterialDupa extends Model
         return $this->belongsTo(ProjectItem::class, 'dupa_id');
     }
 
-    /** @return BelongsTo<Material, $this> */
-    public function material(): BelongsTo
+    /** @return BelongsTo<Item, $this> */
+    public function item(): BelongsTo
     {
-        return $this->belongsTo(Material::class);
-    }
-
-    /** @return HasMany<MaterialItem, $this> */
-    public function breakdowns(): HasMany
-    {
-        return $this->hasMany(MaterialItem::class, 'material_dupa_id');
+        return $this->belongsTo(Item::class);
     }
 }

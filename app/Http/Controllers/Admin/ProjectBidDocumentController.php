@@ -13,6 +13,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -150,9 +151,11 @@ class ProjectBidDocumentController extends Controller
     /** @return array<string, string> */
     private function documentHeaders(Project $project): array
     {
+        $name = Str::slug($project->project_code ?: $project->project_name) ?: 'project-'.$project->id;
+
         return [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'Content-Disposition' => 'inline; filename="'.$project->project_code.'-bid-documents.docx"',
+            'Content-Disposition' => 'inline; filename="'.$name.'-bid-documents.docx"',
             'Cache-Control' => 'private, no-store',
         ];
     }

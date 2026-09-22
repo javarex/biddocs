@@ -10,6 +10,7 @@ use App\Models\SubSection;
 use App\Services\DupaEstimateService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 
@@ -25,6 +26,27 @@ class ProjectStructureController extends Controller
         $this->touch($project);
 
         return back()->with('success', 'Section added.');
+    }
+
+    public function applyStarterStructure(Project $project): RedirectResponse
+    {
+        Gate::authorize('update', $project);
+
+        DB::transaction(function () use ($project): void {
+            $nextOrder = (int) $project->sections()->max('sort_order') + 1;
+            foreach (['PART I', 'PART II', 'PART III'] as $name) {
+                $section = $project->sections()->firstOrCreate(
+                    ['section' => $name],
+                    ['sort_order' => $nextOrder],
+                );
+                if ($section->wasRecentlyCreated) {
+                    $nextOrder++;
+                }
+            }
+            $this->touch($project);
+        });
+
+        return back()->with('success', 'PART I–III starter structure added. Rename the parts as needed.');
     }
 
     public function updateSection(Request $request, Section $section): RedirectResponse
@@ -129,6 +151,16 @@ class ProjectStructureController extends Controller
         $this->touch($project);
 
         return to_route('admin.projects.edit', $project)->with('success', 'DUPA item deleted.');
+    }
+
+    public function duplicateDupa(ProjectItem $dupa): RedirectResponse
+    {
+        $project = $dupa->section->project;
+        Gate::authorize('update', $project);
+        $copy = $this->estimates->duplicate($dupa);
+
+        return to_route('admin.dupas.edit', $copy)
+            ->with('success', 'DUPA copied with its ADD/NON-ADD resources and estimates.');
     }
 
     private function touch(Project $project): void

@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/input';
 
 type ProjectRow = {
     id: number;
-    project_code: string;
+    project_code: string | null;
     project_name: string;
     project_description: string | null;
     location: string;
@@ -122,7 +122,8 @@ export default function ProjectsIndex({
                                                     {project.project_name}
                                                 </p>
                                                 <p className="text-xs text-muted-foreground">
-                                                    {project.project_code}
+                                                    {project.project_code ||
+                                                        'No project code'}
                                                 </p>
                                                 {project.project_description && (
                                                     <p className="mt-1 text-xs text-muted-foreground">

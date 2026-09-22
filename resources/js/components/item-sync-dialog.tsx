@@ -19,7 +19,7 @@ export type SyncCategory = {
     fccode: string | null;
 };
 
-export default function MaterialSyncDialog({
+export default function ItemSyncDialog({
     categories,
 }: {
     categories: SyncCategory[];
@@ -50,7 +50,7 @@ export default function MaterialSyncDialog({
                     <DialogTitle>Sync items by category</DialogTitle>
                     <DialogDescription>
                         Select categories to fetch their items from PIS.
-                        Matching material item codes will have their category,
+                        Matching item codes will have their category,
                         description, and unit updated.
                     </DialogDescription>
                 </DialogHeader>
@@ -58,7 +58,7 @@ export default function MaterialSyncDialog({
                     className="space-y-4"
                     onSubmit={(event) => {
                         event.preventDefault();
-                        form.post('/admin/libraries/materials/sync', {
+                        form.post('/admin/libraries/items/sync', {
                             preserveScroll: true,
                             onSuccess: () => setOpen(false),
                         });

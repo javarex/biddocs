@@ -7,13 +7,16 @@ use App\Models\Project;
 use App\Models\ProjectItem;
 use App\Models\Section;
 use App\Models\Signatory;
+use App\Models\SignatoryRoleAssignment;
 use App\Models\SubSection;
+use App\Models\User;
 use App\Services\DupaEstimateService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -46,24 +49,45 @@ class ProjectController extends Controller
         ]);
     }
 
-    public function create(): Response
+    public function create(Request $request): Response
     {
         Gate::authorize('projects.create');
+        /** @var User $user */
+        $user = $request->user();
 
-        return Inertia::render('admin/projects/create', ['signatories' => $this->signatories()]);
+        return Inertia::render('admin/projects/create', $this->signatoryFormData(user: $user));
     }
 
     public function store(Request $request): RedirectResponse
     {
         Gate::authorize('projects.create');
-        $project = Project::query()->create($this->validated($request) + ['created_by' => $request->user()->id]);
+        $data = $this->validated($request);
+        /** @var User $user */
+        $user = $request->user();
+        $preparer = $this->loggedInSignatory($user);
+        if ($preparer === null) {
+            throw ValidationException::withMessages([
+                'prepared_by' => 'Your user account is not linked to an active signatory. Ask an administrator to link it in Libraries → Signatories.',
+            ]);
+        }
+
+        $data['prepared_by'] = $preparer->cats_no;
+        $defaults = $this->currentSignatoryDefaults();
+        foreach (array_keys(Signatory::ROLES) as $role) {
+            if (! $request->exists($role)) {
+                $data[$role] = $defaults[$role];
+            }
+        }
+
+        $project = Project::query()->create($data + ['created_by' => $request->user()->id]);
         $this->estimates->ensureProjectSettings($project);
         $project->estimateSettings()->where('estimate_type', 'ADD')->update([
             'pol_amount' => $project->pol ?? 0,
             'contingencies_amount' => $project->contingencies ?? 0,
         ]);
 
-        return to_route('admin.projects.edit', $project)->with('success', 'Project created. Add its sections and DUPA items next.');
+        return to_route('admin.projects.edit', ['project' => $project, 'step' => 'structure'])
+            ->with('success', 'Project created. Add its sections and DUPA items next.');
     }
 
     public function show(Project $project): Response
@@ -104,17 +128,31 @@ class ProjectController extends Controller
         ]);
     }
 
-    public function edit(Project $project): Response
+    public function edit(Request $request, Project $project): Response
     {
         Gate::authorize('update', $project);
         $this->estimates->ensureProjectSettings($project);
         $project->load([
             'sections' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'),
             'sections.projectItems' => fn ($query) => $query->whereNull('sub_section_id')->orderBy('sort_order')->orderBy('id'),
+            'sections.projectItems.estimates',
             'sections.subSections' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'),
             'sections.subSections.projectItems' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'),
+            'sections.subSections.projectItems.estimates',
             'estimateSettings', 'miscellaneous' => fn ($query) => $query->orderBy('estimate_type')->orderBy('sort_order'),
         ]);
+
+        $items = $project->sections->flatMap(fn (Section $section) => $section->projectItems
+            ->concat($section->subSections->flatMap(fn (SubSection $subSection) => $subSection->projectItems)));
+        $configured = $items->filter(fn (ProjectItem $item): bool => $item->estimates->contains(
+            fn ($estimate): bool => (float) $estimate->quantity > 0 || (float) $estimate->total_cost > 0,
+        ));
+        $imported = $items->filter(fn (ProjectItem $item): bool => $item->estimates->contains(
+            fn ($estimate): bool => $estimate->calculation_mode === 'imported_summary',
+        ));
+        $missingSignatories = collect(['prepared_by', ...array_keys(Signatory::ROLES)])
+            ->filter(fn (string $role): bool => blank($project->{$role}))
+            ->values();
 
         return Inertia::render('admin/projects/edit', [
             'project' => [
@@ -123,26 +161,52 @@ class ProjectController extends Controller
                     'id' => $section->id,
                     'section' => $section->section,
                     'sort_order' => $section->sort_order,
-                    'items' => $section->projectItems->map(fn (ProjectItem $item) => $item->only(['id', 'pay_item_no', 'description', 'unit']))->values(),
+                    'items' => $section->projectItems->map(fn (ProjectItem $item) => $this->editableItem($item))->values(),
                     'sub_sections' => $section->subSections->map(fn (SubSection $subSection): array => [
                         'id' => $subSection->id,
                         'sub_section' => $subSection->sub_section,
                         'sort_order' => $subSection->sort_order,
-                        'items' => $subSection->projectItems->map(fn (ProjectItem $item) => $item->only(['id', 'pay_item_no', 'description', 'unit']))->values(),
+                        'items' => $subSection->projectItems->map(fn (ProjectItem $item) => $this->editableItem($item))->values(),
                     ])->values(),
                 ])->values(),
                 'estimate_settings' => $project->estimateSettings->keyBy('estimate_type'),
                 'miscellaneous' => $project->miscellaneous,
             ],
-            'signatories' => $this->signatories(),
+            ...$this->signatoryFormData($project),
             'totals' => $this->estimates->projectTotals($project),
+            'initialStep' => in_array($request->query('step'), ['details', 'structure', 'charges', 'review'], true)
+                ? $request->query('step')
+                : 'details',
+            'completion' => [
+                'has_sections' => $project->sections->isNotEmpty(),
+                'total_dupas' => $items->count(),
+                'configured_dupas' => $configured->count(),
+                'imported_summaries' => $imported->count(),
+                'missing_signatories' => $missingSignatories,
+            ],
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function editableItem(ProjectItem $item): array
+    {
+        return [
+            ...$item->only(['id', 'pay_item_no', 'description', 'unit']),
+            'has_estimate' => $item->estimates->contains(
+                fn ($estimate): bool => (float) $estimate->quantity > 0 || (float) $estimate->total_cost > 0,
+            ),
+            'needs_review' => $item->estimates->contains(
+                fn ($estimate): bool => $estimate->calculation_mode === 'imported_summary',
+            ),
+        ];
     }
 
     public function update(Request $request, Project $project): RedirectResponse
     {
         Gate::authorize('update', $project);
-        $project->update($this->validated($request) + ['estimates_updated_at' => now()]);
+        $data = $this->validated($request, $project);
+        unset($data['prepared_by']);
+        $project->update($data + ['estimates_updated_at' => now()]);
         $this->estimates->ensureProjectSettings($project);
         $project->estimateSettings()->where('estimate_type', 'ADD')->update([
             'pol_amount' => $project->pol ?? 0,
@@ -164,31 +228,82 @@ class ProjectController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function validated(Request $request): array
+    private function validated(Request $request, ?Project $project = null): array
     {
-        $signatory = ['nullable', 'string', 'max:64', Rule::exists('signatories', 'cats_no')];
-
         return $request->validate([
-            'project_code' => ['required', 'string', 'max:45'],
+            'project_code' => ['nullable', 'string', 'max:45'],
             'project_name' => ['required', 'string', 'max:255'],
             'project_description' => ['nullable', 'string', 'max:10000'],
             'source_of_funds' => ['nullable', 'string', 'max:255'],
             'location' => ['required', 'string', 'max:255'],
             'contract_duration' => ['required', 'integer', 'min:1', 'max:100000'],
-            'type_of_projects' => ['nullable', 'string', 'max:255'],
-            'category' => ['nullable', 'string', 'max:255'],
+            'type_of_projects' => [
+                'nullable',
+                'string',
+                'max:255',
+                function (string $attribute, mixed $value, \Closure $fail) use ($project): void {
+                    if ($value === null || $value === '' || $project?->type_of_projects === $value) {
+                        return;
+                    }
+
+                    if (! in_array($value, ['Buildings', 'Waterworks', 'Others'], true)) {
+                        $fail('Select Buildings, Waterworks, or Others as the project type.');
+                    }
+                },
+            ],
+            'category' => [
+                'nullable',
+                'string',
+                'max:255',
+                function (string $attribute, mixed $value, \Closure $fail) use ($request, $project): void {
+                    if ($value === null || $value === '') {
+                        return;
+                    }
+
+                    $type = $request->input('type_of_projects');
+                    if ($project?->type_of_projects === $type && $project?->category === $value) {
+                        return;
+                    }
+
+                    $categories = match ($type) {
+                        'Buildings' => ['1 Room', '2 Rooms', '3 Rooms', '4 Rooms'],
+                        'Waterworks' => ['Level 1', 'Level 2', 'Level 3'],
+                        'Others' => ['Home Economics'],
+                        default => [],
+                    };
+                    $isSpecifiedOther = str_starts_with((string) $value, 'Others: ')
+                        && trim(substr((string) $value, strlen('Others: '))) !== '';
+
+                    if (! in_array($value, $categories, true) && ! $isSpecifiedOther) {
+                        $fail('Select a category available for the chosen project type or specify the other category.');
+                    }
+                },
+            ],
             'dimension' => ['nullable', 'string', 'max:10000'],
             'floor_area' => ['nullable', 'string', 'max:255'],
             'implementation_scheme' => ['nullable', Rule::in(['Administration', 'contract'])],
-            'allotment_class' => ['nullable', 'string', 'max:255'],
+            'allotment_class' => [
+                'nullable',
+                'string',
+                'max:255',
+                function (string $attribute, mixed $value, \Closure $fail) use ($project): void {
+                    if ($value === null || $value === '' || $project?->allotment_class === $value) {
+                        return;
+                    }
+
+                    if (! in_array($value, ['Trust Fund', 'General Fund'], true)) {
+                        $fail('Select Trust Fund or General Fund as the allotment class.');
+                    }
+                },
+            ],
             'pol' => ['nullable', 'numeric', 'min:0'],
             'contingencies' => ['nullable', 'numeric', 'min:0'],
-            'prepared_by' => $signatory,
-            'checked_by' => $signatory,
-            'recommending_approval' => $signatory,
-            'included_in_aip' => $signatory,
-            'recommending_approval_pao' => $signatory,
-            'approved_by' => $signatory,
+            'prepared_by' => ['nullable', 'string', 'max:64', Rule::exists('signatories', 'cats_no')],
+            'checked_by' => $this->signatoryRule('checked_by', $project),
+            'recommending_approval' => $this->signatoryRule('recommending_approval', $project),
+            'included_in_aip' => $this->signatoryRule('included_in_aip', $project),
+            'recommending_approval_pao' => $this->signatoryRule('recommending_approval_pao', $project),
+            'approved_by' => $this->signatoryRule('approved_by', $project),
         ]);
     }
 
@@ -204,10 +319,82 @@ class ProjectController extends Controller
         ];
     }
 
-    /** @return array<int, Signatory> */
-    private function signatories(): array
+    /** @return array<string, mixed> */
+    private function signatoryFormData(?Project $project = null, ?User $user = null): array
     {
-        return Signatory::query()->orderBy('name')->get(['cats_no', 'name', 'position'])->values()->all();
+        $assignments = SignatoryRoleAssignment::query()
+            ->whereIn('role', array_keys(Signatory::ROLES))
+            ->whereHas('signatory', fn ($query) => $query->where('is_active', true))
+            ->get(['role', 'cats_no'])
+            ->keyBy('role');
+        $catsNumbers = $assignments->pluck('cats_no');
+        $preparer = $project === null && $user !== null ? $this->loggedInSignatory($user) : null;
+
+        if ($preparer !== null) {
+            $catsNumbers->push($preparer->cats_no);
+        }
+
+        if ($project !== null) {
+            $catsNumbers = $catsNumbers->merge(
+                collect(['prepared_by', ...array_keys(Signatory::ROLES)])
+                    ->map(fn (string $role) => $project->{$role}),
+            );
+        }
+
+        return [
+            'signatories' => Signatory::query()
+                ->whereIn('cats_no', $catsNumbers->filter()->unique()->values())
+                ->orderBy('name')
+                ->get(['cats_no', 'name', 'position', 'is_active'])
+                ->map(fn (Signatory $signatory): array => [
+                    ...$signatory->only(['cats_no', 'name', 'position', 'is_active']),
+                    'roles' => $assignments->where('cats_no', $signatory->cats_no)->keys()->values()->all(),
+                    'is_current_user' => $preparer?->cats_no === $signatory->cats_no,
+                ])->values()->all(),
+            'signatoryDefaults' => ['prepared_by' => $preparer?->cats_no] + collect(array_keys(Signatory::ROLES))
+                ->mapWithKeys(fn (string $role): array => [$role => $assignments->get($role)?->cats_no])
+                ->all(),
+        ];
+    }
+
+    /** @return array<string, string|null> */
+    private function currentSignatoryDefaults(): array
+    {
+        return $this->signatoryFormData()['signatoryDefaults'];
+    }
+
+    private function loggedInSignatory(User $user): ?Signatory
+    {
+        return Signatory::query()
+            ->where('user_id', $user->id)
+            ->where('is_active', true)
+            ->first();
+    }
+
+    /** @return array<int, mixed> */
+    private function signatoryRule(string $role, ?Project $project): array
+    {
+        return [
+            'nullable',
+            'string',
+            'max:64',
+            Rule::exists('signatories', 'cats_no'),
+            function (string $attribute, mixed $value, \Closure $fail) use ($role, $project): void {
+                if ($value === null || $value === '' || $project?->{$role} === $value) {
+                    return;
+                }
+
+                $isCurrent = SignatoryRoleAssignment::query()
+                    ->where('role', $role)
+                    ->where('cats_no', $value)
+                    ->whereHas('signatory', fn ($query) => $query->where('is_active', true))
+                    ->exists();
+
+                if (! $isCurrent) {
+                    $fail('The selected signatory is no longer the current '.strtolower(Signatory::ROLES[$role]).'. Refresh the page and try again.');
+                }
+            },
+        ];
     }
 
     /** @return array<string, mixed> */

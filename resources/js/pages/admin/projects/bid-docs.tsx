@@ -28,7 +28,7 @@ import { Spinner } from '@/components/ui/spinner';
 type Props = {
     project: {
         id: number;
-        project_code: string;
+        project_code: string | null;
         project_name: string;
         project_description: string | null;
         source_of_funds: string | null;
@@ -81,6 +81,7 @@ export default function ProjectBidDocuments({
     documentUrl,
     editor,
 }: Props) {
+    const projectLabel = project.project_code || project.project_name;
     const documentContainer = useRef<HTMLDivElement>(null);
     const styleContainer = useRef<HTMLDivElement>(null);
     const tableOfContentsPage = useRef<HTMLElement | null>(null);
@@ -506,7 +507,7 @@ export default function ProjectBidDocuments({
 <body>${documentContainer.current.innerHTML}</body>
 </html>`);
         printWindow.document.close();
-        printWindow.document.title = `${project.project_code} Bid Documents`;
+        printWindow.document.title = `${projectLabel} Bid Documents`;
 
         const printWhenReady = async () => {
             const images = Array.from(printWindow.document.images);
@@ -547,11 +548,13 @@ export default function ProjectBidDocuments({
 
     return (
         <>
-            <Head title={`Bid Documents - ${project.project_code}`} />
+            <Head title={`Bid Documents - ${projectLabel}`} />
             <div className="bid-doc-page space-y-6 p-4 md:p-6">
                 <PageHeader
                     title="Bid Documents"
-                    description={`${project.project_code} · ${project.project_name}`}
+                    description={[project.project_code, project.project_name]
+                        .filter(Boolean)
+                        .join(' · ')}
                     backHref={`/admin/projects/${project.id}`}
                     action={
                         <div
@@ -661,7 +664,7 @@ export default function ProjectBidDocuments({
                     <Card>
                         <CardHeader>
                             <CardDescription>Project code</CardDescription>
-                            <CardTitle>{project.project_code}</CardTitle>
+                            <CardTitle>{project.project_code || '—'}</CardTitle>
                         </CardHeader>
                     </Card>
                     <Card>

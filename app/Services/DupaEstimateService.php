@@ -6,10 +6,10 @@ use App\Models\DupaEstimate;
 use App\Models\EquipmentDupa;
 use App\Models\LaborDupa;
 use App\Models\MaterialDupa;
-use App\Models\MaterialItem;
 use App\Models\Project;
 use App\Models\ProjectEstimateSetting;
 use App\Models\ProjectItem;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -42,7 +42,7 @@ class DupaEstimateService
 
             $estimate->labors()->delete();
             $estimate->equipment()->delete();
-            $estimate->materials()->each(fn (MaterialDupa $material) => $material->delete());
+            $estimate->items()->delete();
 
             $laborCost = 0.0;
             foreach ($data['labors'] ?? [] as $index => $row) {
@@ -85,34 +85,24 @@ class DupaEstimateService
             }
 
             $materialCost = 0.0;
-            foreach ($data['materials'] ?? [] as $index => $row) {
+            foreach ($data['items'] ?? [] as $index => $row) {
                 $included = (bool) ($row['is_included'] ?? true);
-                $amount = (float) $row['qty'] * (float) $row['multiplier'] * (float) $row['unit_cost'];
+                $amount = (float) $row['qty'] * (float) $row['unit_cost'];
                 if ($included) {
                     $materialCost += $amount;
                 }
-                $material = MaterialDupa::query()->create([
+                MaterialDupa::query()->create([
                     'dupa_id' => $dupa->id,
                     'estimate_id' => $estimate->id,
-                    'material_id' => $row['material_id'],
-                    'description' => $row['description'],
+                    'item_id' => $row['item_id'],
+                    'designation' => $row['designation'],
                     'unit' => $row['unit'],
+                    'group' => filled($row['group'] ?? null) ? $row['group'] : null,
                     'qty' => $row['qty'],
                     'unit_cost' => $row['unit_cost'],
-                    'multiplier' => $row['multiplier'],
                     'is_included' => $included,
                     'sort_order' => $index,
                 ]);
-                foreach ($row['breakdowns'] ?? [] as $breakdownIndex => $breakdown) {
-                    MaterialItem::query()->create([
-                        'material_dupa_id' => $material->id,
-                        'designation' => $breakdown['designation'],
-                        'unit' => $breakdown['unit'],
-                        'qty' => $breakdown['qty'],
-                        'unit_cost' => $breakdown['unit_cost'] ?? 0,
-                        'sort_order' => $breakdownIndex,
-                    ]);
-                }
             }
 
             $direct = round($laborCost + $equipmentCost + $materialCost, 2);
@@ -149,7 +139,83 @@ class DupaEstimateService
             $project = $dupa->section()->firstOrFail()->project()->firstOrFail();
             $project->update(['estimates_updated_at' => now()]);
 
-            return $estimate->fresh(['labors', 'equipment', 'materials.breakdowns']);
+            return $estimate->fresh(['labors', 'equipment', 'items']);
+        });
+    }
+
+    public function duplicate(ProjectItem $source): ProjectItem
+    {
+        return DB::transaction(function () use ($source): ProjectItem {
+            $source->loadMissing([
+                'section.project',
+                'estimates.labors',
+                'estimates.equipment',
+                'estimates.items',
+            ]);
+            Project::query()->whereKey($source->section->project_id)->lockForUpdate()->firstOrFail();
+
+            $copy = ProjectItem::query()->create([
+                'section_id' => $source->section_id,
+                'sub_section_id' => $source->sub_section_id,
+                'pay_item_no' => $this->nextCopyPayItemNumber($source),
+                'description' => $source->description,
+                'unit' => $source->unit,
+                'sort_order' => (int) $source->section->projectItems()->max('sort_order') + 1,
+                'qty' => 0,
+                'estimated_direct_cost' => 0,
+                'ocm' => 0,
+                'profit' => 0,
+                'total_markup_percentage' => 0,
+                'total_markup_value' => 0,
+                'vat_five_percent' => 0,
+                'total_indirect_cost' => 0,
+                'total_cost' => 0,
+                'unit_cost_adjusted' => 0,
+            ]);
+            $this->initialize($copy);
+
+            foreach ($source->estimates as $sourceEstimate) {
+                $estimate = DupaEstimate::query()->updateOrCreate(
+                    [
+                        'dupa_id' => $copy->id,
+                        'estimate_type' => $sourceEstimate->estimate_type,
+                    ],
+                    Arr::except($sourceEstimate->getAttributes(), [
+                        'id', 'dupa_id', 'estimate_type', 'created_at', 'updated_at',
+                    ]),
+                );
+
+                foreach ($sourceEstimate->labors as $row) {
+                    LaborDupa::query()->create([
+                        ...Arr::except($row->getAttributes(), ['id', 'dupa_id', 'estimate_id']),
+                        'dupa_id' => $copy->id,
+                        'estimate_id' => $estimate->id,
+                    ]);
+                }
+                foreach ($sourceEstimate->equipment as $row) {
+                    EquipmentDupa::query()->create([
+                        ...Arr::except($row->getAttributes(), ['id', 'dupa_id', 'estimate_id']),
+                        'dupa_id' => $copy->id,
+                        'estimate_id' => $estimate->id,
+                    ]);
+                }
+                foreach ($sourceEstimate->items as $row) {
+                    MaterialDupa::query()->create([
+                        ...Arr::except($row->getAttributes(), ['id', 'dupa_id', 'estimate_id']),
+                        'dupa_id' => $copy->id,
+                        'estimate_id' => $estimate->id,
+                    ]);
+                }
+            }
+
+            $copy->updateQuietly($source->only([
+                'qty', 'estimated_direct_cost', 'ocm', 'profit', 'total_markup_percentage',
+                'total_markup_value', 'vat_five_percent', 'total_indirect_cost',
+                'total_cost', 'unit_cost_adjusted',
+            ]));
+            $source->section->project->update(['estimates_updated_at' => now()]);
+
+            return $copy;
         });
     }
 
@@ -218,6 +284,27 @@ class DupaEstimateService
             'total_indirect_cost' => $indirect,
             'total_cost' => $total,
             'unit_cost_adjusted' => $quantity > 0 ? round($total / $quantity, 2) : 0,
+        ]);
+    }
+
+    private function nextCopyPayItemNumber(ProjectItem $source): string
+    {
+        $base = preg_replace('/ \(Copy(?: \d+)?\)$/', '', $source->pay_item_no) ?: $source->pay_item_no;
+        $used = ProjectItem::query()
+            ->whereHas('section', fn ($query) => $query->where('project_id', $source->section->project_id))
+            ->pluck('pay_item_no')
+            ->all();
+
+        for ($number = 1; $number < 10000; $number++) {
+            $suffix = $number === 1 ? ' (Copy)' : " (Copy {$number})";
+            $candidate = mb_substr($base, 0, 45 - mb_strlen($suffix)).$suffix;
+            if (! in_array($candidate, $used, true)) {
+                return $candidate;
+            }
+        }
+
+        throw ValidationException::withMessages([
+            'pay_item_no' => 'A unique pay item number could not be generated for the copy.',
         ]);
     }
 }

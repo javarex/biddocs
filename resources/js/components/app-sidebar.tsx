@@ -108,8 +108,8 @@ export function AppSidebar() {
                                 icon: Settings,
                             },
                             {
-                                title: 'Materials',
-                                href: '/admin/libraries/materials',
+                                title: 'Items',
+                                href: '/admin/libraries/items',
                                 icon: BookOpen,
                             },
                             {

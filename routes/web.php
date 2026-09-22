@@ -23,11 +23,11 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
 
     Route::prefix('admin')->name('admin.')->group(function () {
-        Route::post('libraries/materials/sync', [ResourceCatalogController::class, 'syncMaterials'])->name('libraries.materials.sync');
+        Route::post('libraries/items/sync', [ResourceCatalogController::class, 'syncItems'])->name('libraries.items.sync');
 
         Route::post('libraries/categories/sync', [ResourceCatalogController::class, 'syncCategories'])->name('libraries.categories.sync');
 
-        Route::prefix('libraries/{catalog}')->where(['catalog' => 'labors|equipments|materials|prices|categories|signatories'])->name('libraries.')->group(function () {
+        Route::prefix('libraries/{catalog}')->where(['catalog' => 'labors|equipments|items|prices|categories|signatories'])->name('libraries.')->group(function () {
             Route::get('/', [ResourceCatalogController::class, 'index'])->name('index');
             Route::post('/', [ResourceCatalogController::class, 'store'])->name('store');
             Route::put('/{record}', [ResourceCatalogController::class, 'update'])->name('update');
@@ -62,6 +62,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('projects/{project}/import', [ImportController::class, 'projectImport'])->name('projects.import');
         Route::post('projects/{project}/import/preview', [ImportController::class, 'previewForProject'])->name('projects.import.preview');
         Route::post('projects/{project}/sections', [ProjectStructureController::class, 'storeSection'])->name('projects.sections.store');
+        Route::post('projects/{project}/starter-structure', [ProjectStructureController::class, 'applyStarterStructure'])->name('projects.starter-structure.store');
         Route::put('sections/{section}', [ProjectStructureController::class, 'updateSection'])->name('sections.update');
         Route::delete('sections/{section}', [ProjectStructureController::class, 'destroySection'])->name('sections.destroy');
         Route::post('sections/{section}/sub-sections', [ProjectStructureController::class, 'storeSubSection'])->name('sections.sub-sections.store');
@@ -69,6 +70,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::delete('sub-sections/{subSection}', [ProjectStructureController::class, 'destroySubSection'])->name('sub-sections.destroy');
         Route::post('sections/{section}/dupas', [ProjectStructureController::class, 'storeDupa'])->name('sections.dupas.store');
         Route::get('dupas/{dupa}/edit', [ProjectEstimateController::class, 'edit'])->name('dupas.edit');
+        Route::post('dupas/{dupa}/duplicate', [ProjectStructureController::class, 'duplicateDupa'])->name('dupas.duplicate');
         Route::put('dupas/{dupa}', [ProjectEstimateController::class, 'updateDupa'])->name('dupas.update');
         Route::delete('dupas/{dupa}', [ProjectStructureController::class, 'destroyDupa'])->name('dupas.destroy');
         Route::put('dupas/{dupa}/estimates/{type}', [ProjectEstimateController::class, 'updateEstimate'])->name('dupas.estimates.update');

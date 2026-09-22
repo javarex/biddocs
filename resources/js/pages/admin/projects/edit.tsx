@@ -1,10 +1,18 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { Plus, ReceiptText, Trash2 } from 'lucide-react';
+import {
+    CircleAlert,
+    CircleCheck,
+    Copy,
+    Plus,
+    ReceiptText,
+    Trash2,
+} from 'lucide-react';
 import { useState } from 'react';
 import ConfirmDialog from '@/components/confirm-dialog';
 import PageHeader from '@/components/page-header';
 import ProjectForm from '@/components/project-form';
 import type { ProjectFields, Signatory } from '@/components/project-form';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -21,6 +29,8 @@ type Dupa = {
     pay_item_no: string;
     description: string;
     unit: string;
+    has_estimate: boolean;
+    needs_review: boolean;
 };
 type SubSection = {
     id: number;
@@ -56,7 +66,18 @@ type Props = {
         miscellaneous: Misc[];
     };
     signatories: Signatory[];
+    signatoryDefaults: Partial<ProjectFields>;
     totals: Record<'ADD' | 'NON_ADD', Total>;
+    initialStep: WorkspaceStep;
+    completion: Completion;
+};
+type WorkspaceStep = 'details' | 'structure' | 'charges' | 'review';
+type Completion = {
+    has_sections: boolean;
+    total_dupas: number;
+    configured_dupas: number;
+    imported_summaries: number;
+    missing_signatories: string[];
 };
 
 const money = new Intl.NumberFormat('en-PH', {
@@ -64,27 +85,75 @@ const money = new Intl.NumberFormat('en-PH', {
     currency: 'PHP',
 });
 
-export default function ProjectEdit({ project, signatories, totals }: Props) {
+export default function ProjectEdit({
+    project,
+    signatories,
+    signatoryDefaults,
+    totals,
+    initialStep,
+    completion,
+}: Props) {
+    const [step, setStep] = useState<WorkspaceStep>(initialStep);
+    const steps: Array<[WorkspaceStep, string]> = [
+        ['details', '1. Project details'],
+        ['structure', '2. Structure & DUPAs'],
+        ['charges', '3. Project charges'],
+        ['review', '4. Review'],
+    ];
+
     return (
         <>
             <Head title={`Edit ${project.project_name}`} />
-            <div className="space-y-8 p-4 md:p-6">
+            <div className="space-y-4 p-3 md:p-4 [&_[data-slot=card-content]]:px-4 [&_[data-slot=card-header]]:px-4 [&_[data-slot=card]]:gap-4 [&_[data-slot=card]]:py-4 [&_[data-slot=input]]:h-8 [&_button]:h-8 [&_select]:h-8">
                 <PageHeader
                     title={`Edit ${project.project_name}`}
-                    description="Maintain project details, work items, and project-level charges."
+                    description="Complete the project in four guided steps. Changes in each step are saved independently."
                     backHref={`/admin/projects/${project.id}`}
                 />
-                <ProjectForm project={project} signatories={signatories} />
-                <Structure
-                    projectId={project.id!}
-                    sections={project.sections}
-                />
-                <Charges
-                    projectId={project.id!}
-                    initialSettings={project.estimate_settings}
-                    initialMisc={project.miscellaneous}
-                    totals={totals}
-                />
+                <nav
+                    className="grid gap-1 rounded-lg border bg-card p-1 sm:grid-cols-2 lg:grid-cols-4"
+                    aria-label="Project setup steps"
+                >
+                    {steps.map(([value, label]) => (
+                        <Button
+                            key={value}
+                            type="button"
+                            variant={step === value ? 'default' : 'ghost'}
+                            className="h-8 justify-start px-3 text-xs"
+                            onClick={() => setStep(value)}
+                        >
+                            {label}
+                        </Button>
+                    ))}
+                </nav>
+                <div className={step === 'details' ? undefined : 'hidden'}>
+                    <ProjectForm
+                        project={project}
+                        signatories={signatories}
+                        signatoryDefaults={signatoryDefaults}
+                    />
+                </div>
+                <div className={step === 'structure' ? undefined : 'hidden'}>
+                    <Structure
+                        projectId={project.id!}
+                        sections={project.sections}
+                    />
+                </div>
+                <div className={step === 'charges' ? undefined : 'hidden'}>
+                    <Charges
+                        projectId={project.id!}
+                        initialSettings={project.estimate_settings}
+                        initialMisc={project.miscellaneous}
+                        totals={totals}
+                    />
+                </div>
+                <div className={step === 'review' ? undefined : 'hidden'}>
+                    <Review
+                        completion={completion}
+                        totals={totals}
+                        onNavigate={setStep}
+                    />
+                </div>
             </div>
         </>
     );
@@ -100,8 +169,8 @@ function Structure({
     const [sectionName, setSectionName] = useState('');
     const addSection = () => {
         if (!sectionName.trim()) {
-return;
-}
+            return;
+        }
 
         router.post(
             `/admin/projects/${projectId}/sections`,
@@ -119,7 +188,7 @@ return;
                     Part A–E subsections.
                 </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-5">
+            <CardContent className="space-y-3">
                 <div className="flex max-w-xl gap-2">
                     <Input
                         value={sectionName}
@@ -131,9 +200,28 @@ return;
                     </Button>
                 </div>
                 {sections.length === 0 && (
-                    <p className="text-sm text-muted-foreground">
-                        No sections yet.
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-3">
+                        <div className="mr-auto">
+                            <p className="font-medium">No sections yet</p>
+                            <p className="text-sm text-muted-foreground">
+                                Start manually above or add editable PART I–III
+                                placeholders.
+                            </p>
+                        </div>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() =>
+                                router.post(
+                                    `/admin/projects/${projectId}/starter-structure`,
+                                    {},
+                                    { preserveScroll: true },
+                                )
+                            }
+                        >
+                            <Plus /> Add PART I–III starter
+                        </Button>
+                    </div>
                 )}
                 {sections.map((section) => (
                     <SectionCard key={section.id} section={section} />
@@ -155,8 +243,8 @@ function SectionCard({ section }: { section: Section }) {
         const value = window.prompt(`Update ${key.replace('_', ' ')}`, current);
 
         if (value?.trim()) {
-router.put(url, { [key]: value }, { preserveScroll: true });
-}
+            router.put(url, { [key]: value }, { preserveScroll: true });
+        }
     };
     const addDupa = () => {
         if (
@@ -164,8 +252,8 @@ router.put(url, { [key]: value }, { preserveScroll: true });
             !dupa.description.trim() ||
             !dupa.unit.trim()
         ) {
-return;
-}
+            return;
+        }
 
         router.post(
             `/admin/sections/${section.id}/dupas`,
@@ -183,7 +271,7 @@ return;
     };
 
     return (
-        <div className="rounded-lg border p-4">
+        <div className="rounded-lg border p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold">{section.section}</h3>
                 <div className="flex gap-2">
@@ -233,7 +321,7 @@ return;
                 </div>
             </div>
             <DupaList items={section.items} />
-            <div className="mt-4 space-y-3 border-l-2 pl-4">
+            <div className="mt-3 space-y-2 border-l-2 pl-3">
                 {section.sub_sections.map((sub) => (
                     <div key={sub.id} className="space-y-2">
                         <div className="flex items-center justify-between">
@@ -301,7 +389,7 @@ return;
                         variant="outline"
                         onClick={() => {
                             if (subName.trim()) {
-router.post(
+                                router.post(
                                     `/admin/sections/${section.id}/sub-sections`,
                                     { sub_section: subName },
                                     {
@@ -309,14 +397,14 @@ router.post(
                                         onSuccess: () => setSubName(''),
                                     },
                                 );
-}
+                            }
                         }}
                     >
                         Add subsection
                     </Button>
                 </div>
             </div>
-            <div className="mt-5 grid gap-2 rounded-md bg-muted/40 p-3 md:grid-cols-[0.8fr_2fr_0.6fr_1fr_auto]">
+            <div className="mt-3 grid gap-2 rounded-md bg-muted/40 p-2 md:grid-cols-[0.8fr_2fr_0.6fr_1fr_auto]">
                 <Input
                     placeholder="Pay item no."
                     value={dupa.pay_item_no}
@@ -360,15 +448,15 @@ router.post(
 
 function DupaList({ items }: { items: Dupa[] }) {
     if (!items.length) {
-return null;
-}
+        return null;
+    }
 
     return (
         <div className="mt-2 divide-y rounded-md border">
             {items.map((item) => (
                 <div
                     key={item.id}
-                    className="flex items-center justify-between gap-3 p-3 text-sm"
+                    className="flex items-center justify-between gap-2 p-2 text-sm"
                 >
                     <div>
                         <span className="font-medium">{item.pay_item_no}</span>{' '}
@@ -376,12 +464,37 @@ return null;
                         <span className="text-muted-foreground">
                             ({item.unit})
                         </span>
+                        <div className="mt-1 flex gap-1">
+                            {item.has_estimate ? (
+                                <Badge variant="secondary">
+                                    <CircleCheck /> Estimate started
+                                </Badge>
+                            ) : (
+                                <Badge variant="outline">
+                                    Estimate not started
+                                </Badge>
+                            )}
+                            {item.needs_review && (
+                                <Badge variant="outline">
+                                    <CircleAlert /> Imported summary
+                                </Badge>
+                            )}
+                        </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap justify-end gap-2">
                         <Button asChild size="sm" variant="outline">
                             <Link href={`/admin/dupas/${item.id}/edit`}>
                                 <ReceiptText /> Edit estimate
                             </Link>
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                                router.post(`/admin/dupas/${item.id}/duplicate`)
+                            }
+                        >
+                            <Copy /> Duplicate
                         </Button>
                         <ConfirmDialog
                             title="Delete DUPA item?"
@@ -399,6 +512,126 @@ return null;
                     </div>
                 </div>
             ))}
+        </div>
+    );
+}
+
+const signatoryLabels: Record<string, string> = {
+    prepared_by: 'Prepared by',
+    checked_by: 'Checked by',
+    recommending_approval: 'Recommending approval',
+    included_in_aip: 'Included in AIP',
+    recommending_approval_pao: 'Recommending approval (PAO)',
+    approved_by: 'Approved by',
+};
+
+function Review({
+    completion,
+    totals,
+    onNavigate,
+}: {
+    completion: Completion;
+    totals: Record<'ADD' | 'NON_ADD', Total>;
+    onNavigate: (step: WorkspaceStep) => void;
+}) {
+    const checks = [
+        {
+            label: 'Project has at least one section',
+            complete: completion.has_sections,
+            step: 'structure' as WorkspaceStep,
+        },
+        {
+            label: 'Project has at least one DUPA item',
+            complete: completion.total_dupas > 0,
+            step: 'structure' as WorkspaceStep,
+        },
+        {
+            label:
+                completion.total_dupas === 0
+                    ? 'DUPA estimates have not started'
+                    : `${completion.configured_dupas} of ${completion.total_dupas} DUPAs have an estimate`,
+            complete:
+                completion.total_dupas > 0 &&
+                completion.configured_dupas === completion.total_dupas,
+            step: 'structure' as WorkspaceStep,
+        },
+        {
+            label:
+                completion.missing_signatories.length === 0
+                    ? 'All signatory roles are assigned'
+                    : `Missing: ${completion.missing_signatories.map((role) => signatoryLabels[role] ?? role).join(', ')}`,
+            complete: completion.missing_signatories.length === 0,
+            step: 'details' as WorkspaceStep,
+        },
+        {
+            label:
+                completion.imported_summaries === 0
+                    ? 'No imported summary estimates need review'
+                    : `${completion.imported_summaries} imported DUPA(s) should be reviewed`,
+            complete: completion.imported_summaries === 0,
+            step: 'structure' as WorkspaceStep,
+        },
+    ];
+
+    return (
+        <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Project readiness</CardTitle>
+                    <CardDescription>
+                        Use this checklist before preparing the final project
+                        documents.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    {checks.map((check) => (
+                        <button
+                            type="button"
+                            key={check.label}
+                            className="flex w-full items-center gap-2 rounded-md border p-2 text-left hover:bg-muted/50"
+                            onClick={() => onNavigate(check.step)}
+                        >
+                            {check.complete ? (
+                                <CircleCheck className="text-green-600" />
+                            ) : (
+                                <CircleAlert className="text-amber-600" />
+                            )}
+                            <span className="text-sm">{check.label}</span>
+                        </button>
+                    ))}
+                </CardContent>
+            </Card>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Estimate totals</CardTitle>
+                    <CardDescription>
+                        Combined DUPA totals and project-level charges.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {(['ADD', 'NON_ADD'] as const).map((type) => (
+                        <div key={type} className="rounded-md border p-3">
+                            <div className="font-semibold">
+                                {type.replace('_', '-')}
+                            </div>
+                            <div className="mt-2 text-sm text-muted-foreground">
+                                Grand total
+                            </div>
+                            <div className="text-xl font-bold">
+                                {money.format(totals[type].grand_total)}
+                            </div>
+                        </div>
+                    ))}
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => onNavigate('charges')}
+                    >
+                        Review project charges
+                    </Button>
+                </CardContent>
+            </Card>
         </div>
     );
 }
@@ -445,10 +678,10 @@ function Charges({
                         estimate side.
                     </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-5">
+                <CardContent className="space-y-3">
                     <div className="grid gap-4 lg:grid-cols-2">
                         {(['ADD', 'NON_ADD'] as const).map((type) => (
-                            <div key={type} className="rounded-lg border p-4">
+                            <div key={type} className="rounded-lg border p-3">
                                 <h3 className="mb-3 font-semibold">
                                     {type.replace('_', '-')}
                                 </h3>

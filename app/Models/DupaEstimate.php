@@ -43,7 +43,7 @@ class DupaEstimate extends Model
     }
 
     /** @return HasMany<MaterialDupa, $this> */
-    public function materials(): HasMany
+    public function items(): HasMany
     {
         return $this->hasMany(MaterialDupa::class, 'estimate_id');
     }

@@ -54,6 +54,11 @@ class ProjectItem extends Model
                 'qty', 'estimated_direct_cost', 'ocm', 'profit', 'vat_five_percent',
                 'total_indirect_cost', 'total_cost', 'unit_cost_adjusted',
             ];
+            if ($item->wasRecentlyCreated && collect($tracked)->every(
+                fn (string $attribute): bool => (float) $item->{$attribute} === 0.0,
+            )) {
+                return;
+            }
             if (! $item->wasRecentlyCreated && ! $item->wasChanged($tracked)) {
                 return;
             }
@@ -135,10 +140,10 @@ class ProjectItem extends Model
             ->withPivot(['id', 'designation', 'no_of_units', 'no_of_days', 'rental_unit_cost']);
     }
 
-    /** @return BelongsToMany<Material, $this> */
-    public function materials(): BelongsToMany
+    /** @return BelongsToMany<Item, $this> */
+    public function items(): BelongsToMany
     {
-        return $this->belongsToMany(Material::class, 'material_dupa', 'dupa_id', 'material_id')
-            ->withPivot(['id', 'description']);
+        return $this->belongsToMany(Item::class, 'material_dupa', 'dupa_id', 'item_id')
+            ->withPivot(['id', 'designation', 'unit', 'qty', 'unit_cost', 'group']);
     }
 }

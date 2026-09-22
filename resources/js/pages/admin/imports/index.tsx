@@ -67,7 +67,11 @@ type Preview = {
 };
 type History = Omit<Preview, 'metadata' | 'failures'> & {
     importer: { id: number; name: string } | null;
-    project: { id: number; project_code: string; project_name: string } | null;
+    project: {
+        id: number;
+        project_code: string | null;
+        project_name: string;
+    } | null;
     completed_at: string | null;
     error_message: string | null;
 };
@@ -77,7 +81,7 @@ type Props = {
     preview?: Preview | null;
     targetProject?: {
         id: number;
-        project_code: string;
+        project_code: string | null;
         project_name: string;
         location: string;
         contract_duration: number;
@@ -246,9 +250,13 @@ export default function ImportsIndex({
                         <CardHeader>
                             <CardTitle>{targetProject.project_name}</CardTitle>
                             <CardDescription>
-                                {targetProject.project_code} ·{' '}
-                                {targetProject.location} ·{' '}
-                                {targetProject.contract_duration} days
+                                {[
+                                    targetProject.project_code,
+                                    targetProject.location,
+                                    `${targetProject.contract_duration} days`,
+                                ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
                             </CardDescription>
                         </CardHeader>
                     </Card>

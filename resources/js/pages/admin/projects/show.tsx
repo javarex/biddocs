@@ -40,7 +40,7 @@ type Total = {
 type Props = {
     project: {
         id: number;
-        project_code: string;
+        project_code: string | null;
         project_name: string;
         project_description: string | null;
         source_of_funds: string | null;
@@ -82,7 +82,9 @@ export default function ProjectsShow({ project, totals }: Props) {
             <div className="space-y-6 p-4 md:p-6">
                 <PageHeader
                     title={project.project_name}
-                    description={`${project.project_code} · ${project.location}`}
+                    description={[project.project_code, project.location]
+                        .filter(Boolean)
+                        .join(' · ')}
                     backHref="/admin/projects"
                     action={
                         <div className="flex flex-wrap gap-2">

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-class MaterialSyncService
+class ItemSyncService
 {
     /** @param list<int> $categories */
     public function sync(array $categories): int
@@ -39,11 +39,24 @@ class MaterialSyncService
         }
         $rows = array_map(function ($row) {
             if (is_array($row)) {
-                foreach (['ITEMCODE', 'DESCRIPTION', 'UNIT'] as $field) {
+                foreach (['ITEMCODE', 'DESCRIPTION', 'UNIT', 'effective_from', 'effective_to'] as $field) {
                     if (is_string($row[$field] ?? null)) {
                         $row[$field] = trim($row[$field]);
                     }
                 }
+            }
+
+            return $row;
+        }, $rows);
+        $existingUnits = DB::table('items')
+            ->whereIn('itemcode', collect($rows)
+                ->filter(fn ($row): bool => is_array($row) && is_string($row['ITEMCODE'] ?? null))
+                ->pluck('ITEMCODE')
+                ->unique())
+            ->pluck('unit', 'itemcode');
+        $rows = array_map(function ($row) use ($existingUnits) {
+            if (is_array($row) && blank($row['UNIT'] ?? null)) {
+                $row['UNIT'] = $existingUnits->get($row['ITEMCODE'] ?? '') ?: 'N/A';
             }
 
             return $row;
@@ -55,6 +68,9 @@ class MaterialSyncService
             'items.*.IDCATEGORY' => ['required', 'integer', Rule::in($categories)],
             'items.*.DESCRIPTION' => ['required', 'string', 'max:10000'],
             'items.*.UNIT' => ['required', 'string', 'max:255'],
+            'items.*.price' => ['required', 'numeric', 'min:0'],
+            'items.*.effective_from' => ['required', 'date_format:Y-m-d'],
+            'items.*.effective_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:items.*.effective_from'],
         ]);
         if ($validator->fails()) {
             $this->fail('PIS returned invalid item data: '.$validator->errors()->first().' No items were synced.');
@@ -67,7 +83,15 @@ class MaterialSyncService
                 'unit' => $row['UNIT'],
             ], $rows);
             foreach (array_chunk($records, 200) as $chunk) {
-                DB::table('materials')->upsert($chunk, ['itemcode'], ['category_id', 'description', 'unit']);
+                DB::table('items')->upsert($chunk, ['itemcode'], ['category_id', 'description', 'unit']);
+            }
+            foreach ($rows as $row) {
+                DB::table('prices')->insert([
+                    'itemcode' => $row['ITEMCODE'],
+                    'price' => $row['price'],
+                    'effective_from' => $row['effective_from'],
+                    'effective_to' => filled($row['effective_to'] ?? null) ? $row['effective_to'] : null,
+                ]);
             }
         });
 

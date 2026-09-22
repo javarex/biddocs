@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Signatory;
+use App\Models\User;
 use App\Services\CategorySyncService;
-use App\Services\MaterialSyncService;
+use App\Services\ItemSyncService;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,9 +24,9 @@ class ResourceCatalogController extends Controller
         'categories' => ['title' => 'Categories', 'fields' => ['IDCATEGORY', 'fccode', 'CATEGORY_DESCRIPTION', 'is_active']],
         'labors' => ['title' => 'Labor', 'fields' => ['manpower', 'rates', 'types']],
         'equipments' => ['title' => 'Equipment', 'fields' => ['equipment', 'rental']],
-        'materials' => ['title' => 'Materials', 'fields' => ['itemcode', 'category_id', 'description', 'unit']],
+        'items' => ['title' => 'Items', 'fields' => ['itemcode', 'category_id', 'description', 'unit']],
         'prices' => ['title' => 'Prices', 'fields' => ['itemcode', 'price', 'effective_from', 'effective_to']],
-        'signatories' => ['title' => 'Signatories', 'fields' => ['cats_no', 'name', 'position']],
+        'signatories' => ['title' => 'Signatories', 'fields' => ['cats_no', 'name', 'position', 'user_id', 'roles', 'is_active']],
     ];
 
     public function index(Request $request, string $catalog): Response
@@ -31,25 +34,75 @@ class ResourceCatalogController extends Controller
         Gate::authorize('libraries.view');
         $definition = $this->definition($catalog);
         $search = trim((string) $request->string('search'));
+        $displayFields = $catalog === 'items'
+            ? [...$definition['fields'], 'unit_cost', 'effective_from', 'effective_to']
+            : $definition['fields'];
 
-        return Inertia::render('admin/libraries/index', [
-            'catalog' => $catalog,
-            'title' => $definition['title'],
-            'fields' => $definition['fields'],
-            'records' => DB::table($catalog)->select([$this->key($catalog).' as id', ...$definition['fields']])
+        if ($catalog === 'signatories') {
+            $records = Signatory::query()->with('roleAssignments')
+                ->when($search !== '', fn ($query) => $query->where(function ($query) use ($search): void {
+                    $query->where('cats_no', 'like', "%{$search}%")
+                        ->orWhere('name', 'like', "%{$search}%")
+                        ->orWhere('position', 'like', "%{$search}%");
+                }))->orderByDesc('cats_no')->paginate(15)->withQueryString()
+                ->through(fn (Signatory $signatory): array => [
+                    'id' => $signatory->cats_no,
+                    ...$signatory->only(['cats_no', 'name', 'position', 'user_id', 'is_active']),
+                    'roles' => $signatory->roleAssignments->pluck('role')->values()->all(),
+                ]);
+        } elseif ($catalog === 'items') {
+            $records = DB::table('items')
+                ->select(['items.id as id', ...array_map(fn (string $field): string => 'items.'.$field, $definition['fields'])])
+                ->selectSub($this->latestPriceColumn('price'), 'unit_cost')
+                ->selectSub($this->latestPriceColumn('effective_from'), 'effective_from')
+                ->selectSub($this->latestPriceColumn('effective_to'), 'effective_to')
+                ->when($search !== '', function ($query) use ($definition, $search): void {
+                    $query->where(function ($query) use ($definition, $search): void {
+                        foreach ($definition['fields'] as $field) {
+                            $query->orWhere('items.'.$field, 'like', "%{$search}%");
+                        }
+                    });
+                })->orderByDesc('items.id')->paginate(15)->withQueryString();
+        } else {
+            $records = DB::table($catalog)->select([$this->key($catalog).' as id', ...$definition['fields']])
                 ->when($search !== '', function ($query) use ($definition, $search): void {
                     $query->where(function ($query) use ($definition, $search): void {
                         foreach ($definition['fields'] as $field) {
                             $query->orWhere($field, 'like', "%{$search}%");
                         }
                     });
-                })->orderByDesc($this->key($catalog))->paginate(15)->withQueryString(),
+                })->orderByDesc($this->key($catalog))->paginate(15)->withQueryString();
+        }
+
+        return Inertia::render('admin/libraries/index', [
+            'catalog' => $catalog,
+            'title' => $definition['title'],
+            'fields' => $definition['fields'],
+            'displayFields' => $displayFields,
+            'records' => $records,
             'filters' => ['search' => $search],
-            'syncMessage' => $request->session()->get($catalog === 'materials' ? 'material_sync' : 'category_sync'),
-            'categories' => $catalog === 'materials'
+            'syncMessage' => $request->session()->get($catalog === 'items' ? 'item_sync' : 'category_sync'),
+            'categories' => $catalog === 'items'
                 ? DB::table('categories')->orderBy('CATEGORY_DESCRIPTION')->get(['IDCATEGORY', 'CATEGORY_DESCRIPTION', 'fccode']) : [],
-            'materials' => $catalog === 'prices'
-                ? DB::table('materials')->orderBy('itemcode')->get(['itemcode', 'description']) : [],
+            'items' => $catalog === 'prices'
+                ? DB::table('items')->orderBy('itemcode')->get(['itemcode', 'description']) : [],
+            'signatoryRoles' => $catalog === 'signatories'
+                ? collect(Signatory::ROLES)->map(function (string $label, string $key): array {
+                    $assignment = DB::table('signatory_role_assignments')
+                        ->join('signatories', 'signatories.cats_no', '=', 'signatory_role_assignments.cats_no')
+                        ->where('signatory_role_assignments.role', $key)
+                        ->first(['signatories.cats_no', 'signatories.name']);
+
+                    return [
+                        'key' => $key,
+                        'label' => $label,
+                        'cats_no' => $assignment?->cats_no,
+                        'name' => $assignment?->name,
+                    ];
+                })->values() : [],
+            'systemUsers' => $catalog === 'signatories'
+                ? User::query()->orderBy('name')->orderBy('username')
+                    ->get(['id', 'name', 'username', 'is_active']) : [],
             'can' => [
                 'create' => Gate::allows('libraries.create'),
                 'update' => Gate::allows('libraries.update'),
@@ -59,13 +112,31 @@ class ResourceCatalogController extends Controller
         ]);
     }
 
-    public function store(Request $request, string $catalog): RedirectResponse
+    public function store(Request $request, string $catalog): RedirectResponse|JsonResponse
     {
         Gate::authorize('libraries.create');
-        $this->definition($catalog);
+        $definition = $this->definition($catalog);
         $data = $this->validated($request, $catalog);
+        if ($request->expectsJson() && ! in_array($catalog, ['labors', 'equipments'], true)) {
+            abort(404);
+        }
+        if ($catalog === 'signatories') {
+            $this->saveSignatory($data);
+
+            return back()->with('success', 'Signatory created successfully.');
+        }
         if (in_array($catalog, ['labors', 'categories'], true)) {
             $data['created_at'] = $data['updated_at'] = now();
+        }
+        if ($request->expectsJson()) {
+            $id = DB::table($catalog)->insertGetId($data);
+
+            return response()->json([
+                'record' => [
+                    'id' => $id,
+                    ...collect($data)->only($definition['fields'])->all(),
+                ],
+            ], 201);
         }
         DB::table($catalog)->insert($data);
 
@@ -77,6 +148,11 @@ class ResourceCatalogController extends Controller
         Gate::authorize('libraries.update');
         $this->find($catalog, $record);
         $data = $this->validated($request, $catalog, $record);
+        if ($catalog === 'signatories') {
+            $this->saveSignatory($data, $record);
+
+            return back()->with('success', 'Signatory updated successfully.');
+        }
         if (in_array($catalog, ['labors', 'categories'], true)) {
             $data['updated_at'] = now();
         }
@@ -89,8 +165,13 @@ class ResourceCatalogController extends Controller
     {
         Gate::authorize('libraries.delete');
         $this->find($catalog, $record);
-        if ($catalog === 'categories' && DB::table('materials')->where('category_id', $record)->exists()) {
-            throw ValidationException::withMessages(['delete' => 'This category is used by materials and cannot be deleted.']);
+        if ($catalog === 'signatories') {
+            throw ValidationException::withMessages([
+                'delete' => 'Signatories are retained for project history. Mark this person inactive instead.',
+            ]);
+        }
+        if ($catalog === 'categories' && DB::table('items')->where('category_id', $record)->exists()) {
+            throw ValidationException::withMessages(['delete' => 'This category is used by items and cannot be deleted.']);
         }
         try {
             DB::table($catalog)->where($this->key($catalog), $record)->delete();
@@ -117,7 +198,7 @@ class ResourceCatalogController extends Controller
         return back()->with('category_sync', "Synced {$count} categories successfully.");
     }
 
-    public function syncMaterials(Request $request, MaterialSyncService $service): RedirectResponse
+    public function syncItems(Request $request, ItemSyncService $service): RedirectResponse
     {
         Gate::authorize('libraries.create');
         Gate::authorize('libraries.update');
@@ -127,7 +208,7 @@ class ResourceCatalogController extends Controller
         ]);
         $count = $service->sync($data['categories']);
 
-        return back()->with('material_sync', "Synced {$count} items into Materials successfully.");
+        return back()->with('item_sync', "Synced {$count} items successfully.");
     }
 
     private function key(string $catalog): string
@@ -137,6 +218,16 @@ class ResourceCatalogController extends Controller
             'signatories' => 'cats_no',
             default => 'id',
         };
+    }
+
+    private function latestPriceColumn(string $column): \Closure
+    {
+        return fn ($query) => $query->from('prices')
+            ->select($column)
+            ->whereColumn('prices.itemcode', 'items.itemcode')
+            ->orderByDesc('prices.effective_from')
+            ->orderByDesc('prices.id')
+            ->limit(1);
     }
 
     /** @return array{title: string, fields: list<string>} */
@@ -173,14 +264,14 @@ class ResourceCatalogController extends Controller
                 'equipment' => ['required', 'string', 'max:255'],
                 'rental' => ['required', 'numeric', 'min:0'],
             ],
-            'materials' => [
-                'itemcode' => ['required', 'string', 'max:255', Rule::unique('materials', 'itemcode')->ignore($record)],
+            'items' => [
+                'itemcode' => ['required', 'string', 'max:255', Rule::unique('items', 'itemcode')->ignore($record)],
                 'category_id' => ['required', 'integer', 'min:1', 'max:4294967295'],
                 'description' => ['required', 'string', 'max:10000'],
                 'unit' => ['required', 'string', 'max:255'],
             ],
             'prices' => [
-                'itemcode' => ['required', 'string', Rule::exists('materials', 'itemcode')],
+                'itemcode' => ['required', 'string', Rule::exists('items', 'itemcode')],
                 'price' => ['required', 'numeric', 'min:0', 'max:9999999999999.99', 'decimal:0,2'],
                 'effective_from' => ['required', 'date_format:Y-m-d'],
                 'effective_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:effective_from'],
@@ -190,8 +281,49 @@ class ResourceCatalogController extends Controller
                     $record === null ? Rule::unique('signatories', 'cats_no') : Rule::in([(string) $record])],
                 'name' => ['required', 'string', 'max:255'],
                 'position' => ['required', 'string', 'max:255'],
+                'user_id' => ['nullable', 'integer', Rule::exists('users', 'id'),
+                    Rule::unique('signatories', 'user_id')->ignore($record, 'cats_no')],
+                'is_active' => ['required', 'boolean'],
+                'roles' => ['sometimes', 'array'],
+                'roles.*' => ['required', 'string', 'distinct', Rule::in(array_keys(Signatory::ROLES))],
             ],
             default => throw new \InvalidArgumentException('Unknown resource catalog.'),
+        });
+    }
+
+    /** @param array<string, mixed> $data */
+    private function saveSignatory(array $data, ?string $record = null): void
+    {
+        DB::transaction(function () use ($data, $record): void {
+            $roles = $data['is_active'] ? ($data['roles'] ?? []) : [];
+            unset($data['roles']);
+
+            if ($record === null) {
+                if ($roles !== [] && DB::table('signatory_role_assignments')
+                    ->whereIn('role', $roles)->lockForUpdate()->exists()) {
+                    Gate::authorize('libraries.update');
+                }
+
+                DB::table('signatories')->insert($data);
+                $catsNo = $data['cats_no'];
+            } else {
+                DB::table('signatories')->where('cats_no', $record)->update($data);
+                $catsNo = $record;
+            }
+
+            $ownedRoles = DB::table('signatory_role_assignments')->where('cats_no', $catsNo);
+            if ($roles === []) {
+                $ownedRoles->delete();
+            } else {
+                $ownedRoles->whereNotIn('role', $roles)->delete();
+            }
+
+            foreach ($roles as $role) {
+                DB::table('signatory_role_assignments')->updateOrInsert(
+                    ['role' => $role],
+                    ['cats_no' => $catsNo, 'updated_at' => now(), 'created_at' => now()],
+                );
+            }
         });
     }
 }
