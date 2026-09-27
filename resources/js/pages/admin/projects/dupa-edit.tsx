@@ -1,6 +1,13 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { ArrowLeft, ArrowRight, Copy, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import {
+    ArrowLeft,
+    ArrowRight,
+    ChevronDown,
+    Copy,
+    Plus,
+    Trash2,
+} from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -124,8 +131,8 @@ const money = new Intl.NumberFormat('en-PH', {
     style: 'currency',
     currency: 'PHP',
 });
-const itemCatalogLabel = (item: ItemCatalog) =>
-    `${item.itemcode} · ${item.description} · ${item.unit} · ${money.format(item.price)}`;
+const supersededItemNotice =
+    /^\s*\((?:do not use this code anymore|please use item code\b[^)]*)\)/i;
 
 export default function DupaEdit({
     csrf_token,
@@ -183,6 +190,9 @@ export default function DupaEdit({
     >({});
     const estimate = estimates[side];
     const itemDraft = itemDrafts[side];
+    const selectedItem = catalogs.items.find(
+        (item) => item.id === Number(itemDraft.item_id),
+    );
     const groupOptions = useMemo(
         () =>
             Array.from(
@@ -885,49 +895,41 @@ export default function DupaEdit({
                                     {catalogs.items.length} catalog item(s)
                                 </span>
                             </div>
-                            <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_0.35fr_0.8fr_auto]">
-                                <div className="min-w-0">
-                                    <Input
-                                        list="dupa-item-catalog"
-                                        aria-label="Search items"
-                                        autoComplete="off"
-                                        placeholder={
-                                            catalogs.items.length
-                                                ? 'Search by item code or description'
-                                                : 'No items available'
-                                        }
-                                        value={itemDraft.item_search}
-                                        onChange={(event) => {
-                                            const itemSearch =
-                                                event.target.value;
-                                            const selected =
-                                                catalogs.items.find(
-                                                    (item) =>
-                                                        itemCatalogLabel(
-                                                            item,
-                                                        ) === itemSearch ||
-                                                        item.itemcode ===
-                                                            itemSearch,
-                                                );
-
-                                            setItemDraft({
-                                                ...itemDraft,
-                                                item_id: selected
-                                                    ? String(selected.id)
-                                                    : '',
-                                                item_search: itemSearch,
-                                            });
-                                        }}
-                                    />
-                                    <datalist id="dupa-item-catalog">
-                                        {catalogs.items.map((item) => (
-                                            <option
-                                                key={item.id}
-                                                value={itemCatalogLabel(item)}
-                                            />
-                                        ))}
-                                    </datalist>
-                                </div>
+                            <div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_minmax(5rem,0.45fr)_minmax(7rem,0.65fr)_minmax(6rem,0.5fr)_minmax(8rem,0.8fr)_auto]">
+                                <ItemPicker
+                                    key={side}
+                                    items={catalogs.items}
+                                    value={itemDraft.item_search}
+                                    onChange={(item, search) =>
+                                        setItemDraft({
+                                            ...itemDraft,
+                                            item_id: item
+                                                ? String(item.id)
+                                                : '',
+                                            item_search: search,
+                                        })
+                                    }
+                                />
+                                <Input
+                                    aria-label="Selected item unit"
+                                    title="Unit"
+                                    placeholder="Unit"
+                                    value={selectedItem?.unit ?? ''}
+                                    readOnly
+                                    className="bg-muted/40"
+                                />
+                                <Input
+                                    aria-label="Selected item price"
+                                    title="Current item price"
+                                    placeholder="Price"
+                                    value={
+                                        selectedItem
+                                            ? money.format(selectedItem.price)
+                                            : ''
+                                    }
+                                    readOnly
+                                    className="bg-muted/40 tabular-nums"
+                                />
                                 <Input
                                     type="number"
                                     min="0"
@@ -1624,6 +1626,185 @@ function ResourcePicker({
         </div>
     );
 }
+function ItemPicker({
+    items,
+    value,
+    onChange,
+}: {
+    items: ItemCatalog[];
+    value: string;
+    onChange: (item: ItemCatalog | null, search: string) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState('');
+    const [active, setActive] = useState(0);
+    const container = useRef<HTMLDivElement>(null);
+    const searchInput = useRef<HTMLInputElement>(null);
+    const listId = 'dupa-item-options';
+    const matches = useMemo(() => {
+        const terms = query
+            .trim()
+            .toLocaleLowerCase()
+            .split(/\s+/)
+            .filter(Boolean);
+        const found: ItemCatalog[] = [];
+
+        for (const item of items) {
+            if (supersededItemNotice.test(item.description)) {
+                continue;
+            }
+
+            const searchable =
+                `${item.itemcode} ${item.description} ${item.unit}`.toLocaleLowerCase();
+
+            if (terms.every((term) => searchable.includes(term))) {
+                found.push(item);
+
+                if (found.length === 50) {
+                    break;
+                }
+            }
+        }
+
+        return found;
+    }, [items, query]);
+
+    useEffect(() => {
+        if (open) {
+            searchInput.current?.focus();
+        }
+    }, [open]);
+
+    useEffect(() => {
+        const closeOutside = (event: PointerEvent) => {
+            if (!container.current?.contains(event.target as Node)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener('pointerdown', closeOutside);
+
+        return () => document.removeEventListener('pointerdown', closeOutside);
+    }, []);
+
+    const choose = (item: ItemCatalog) => {
+        onChange(item, `${item.itemcode} · ${item.description}`);
+        setQuery('');
+        setOpen(false);
+    };
+
+    return (
+        <div ref={container} className="relative min-w-0">
+            <button
+                type="button"
+                aria-label="Select catalog item"
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                aria-controls={listId}
+                disabled={!items.length}
+                className="flex h-8 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 text-left text-sm shadow-xs focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                onClick={() => {
+                    setQuery('');
+                    setActive(0);
+                    setOpen((current) => !current);
+                }}
+            >
+                <span
+                    className={`truncate ${value ? '' : 'text-muted-foreground'}`}
+                >
+                    {value ||
+                        (items.length
+                            ? 'Select an item'
+                            : 'No items available')}
+                </span>
+                <ChevronDown className="size-4 shrink-0 opacity-50" />
+            </button>
+            {open && (
+                <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 text-popover-foreground shadow-md md:w-[min(36rem,calc(100vw-4rem))]">
+                    <Input
+                        ref={searchInput}
+                        aria-label="Search catalog items"
+                        aria-controls={listId}
+                        aria-activedescendant={
+                            matches[active]
+                                ? `dupa-item-${matches[active].id}`
+                                : undefined
+                        }
+                        autoComplete="off"
+                        placeholder="Search item code or description"
+                        value={query}
+                        onChange={(event) => {
+                            setQuery(event.target.value);
+                            setActive(0);
+                        }}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Escape') {
+                                setOpen(false);
+                            }
+
+                            if (event.key === 'ArrowDown') {
+                                event.preventDefault();
+                                setActive((current) =>
+                                    Math.min(current + 1, matches.length - 1),
+                                );
+                            }
+
+                            if (event.key === 'ArrowUp') {
+                                event.preventDefault();
+                                setActive((current) =>
+                                    Math.max(current - 1, 0),
+                                );
+                            }
+
+                            if (event.key === 'Enter' && matches[active]) {
+                                event.preventDefault();
+                                choose(matches[active]);
+                            }
+                        }}
+                    />
+                    <div
+                        id={listId}
+                        role="listbox"
+                        className="mt-1 max-h-64 overflow-y-auto"
+                    >
+                        {matches.length ? (
+                            matches.map((item, index) => (
+                                <button
+                                    key={item.id}
+                                    id={`dupa-item-${item.id}`}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={index === active}
+                                    className={`flex !h-auto min-h-14 w-full flex-col items-start gap-1 rounded-sm px-3 py-2 text-left text-sm leading-snug whitespace-normal hover:bg-accent ${index === active ? 'bg-accent' : ''}`}
+                                    onMouseDown={(event) =>
+                                        event.preventDefault()
+                                    }
+                                    onClick={() => choose(item)}
+                                >
+                                    <span className="font-semibold">
+                                        {item.itemcode}
+                                    </span>
+                                    <span className="whitespace-normal text-muted-foreground">
+                                        {item.description}
+                                    </span>
+                                </button>
+                            ))
+                        ) : (
+                            <div className="px-2 py-2 text-sm text-muted-foreground">
+                                No matching items
+                            </div>
+                        )}
+                        {matches.length === 50 && (
+                            <div className="px-2 py-1 text-xs text-muted-foreground">
+                                Showing first 50 matches. Refine your search.
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 function ResourceColumns({
     columns,
     className,
