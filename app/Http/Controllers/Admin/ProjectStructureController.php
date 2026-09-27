@@ -122,6 +122,10 @@ class ProjectStructureController extends Controller
         $this->estimates->initialize($dupa);
         $this->touch($section->project);
 
+        if ($request->boolean('stay_on_structure')) {
+            return back()->with('success', 'DUPA item added.');
+        }
+
         return to_route('admin.dupas.edit', $dupa)->with('success', 'DUPA item created. Add its estimate resources.');
     }
 
@@ -153,11 +157,15 @@ class ProjectStructureController extends Controller
         return to_route('admin.projects.edit', $project)->with('success', 'DUPA item deleted.');
     }
 
-    public function duplicateDupa(ProjectItem $dupa): RedirectResponse
+    public function duplicateDupa(Request $request, ProjectItem $dupa): RedirectResponse
     {
         $project = $dupa->section->project;
         Gate::authorize('update', $project);
         $copy = $this->estimates->duplicate($dupa);
+
+        if ($request->boolean('stay_on_structure')) {
+            return back()->with('success', 'DUPA copied with its ADD/NON-ADD resources and estimates.');
+        }
 
         return to_route('admin.dupas.edit', $copy)
             ->with('success', 'DUPA copied with its ADD/NON-ADD resources and estimates.');

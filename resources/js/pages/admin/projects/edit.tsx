@@ -1,4 +1,4 @@
-import { Head, Link, router, useForm } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
 import {
     CircleAlert,
     CircleCheck,
@@ -11,8 +11,12 @@ import { useState } from 'react';
 import ConfirmDialog from '@/components/confirm-dialog';
 import PageHeader from '@/components/page-header';
 import ProjectForm from '@/components/project-form';
-import type { ProjectFields, Signatory } from '@/components/project-form';
-import { Badge } from '@/components/ui/badge';
+import type {
+    ProjectFields,
+    Signatory,
+    SignatoryRoleOption,
+    SignatorySystemUser,
+} from '@/components/project-form';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -21,14 +25,25 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 type Dupa = {
     id: number;
+    section_id: number;
+    sub_section_id: number | null;
     pay_item_no: string;
     description: string;
     unit: string;
+    sort_order: number;
     has_estimate: boolean;
     needs_review: boolean;
 };
@@ -67,6 +82,10 @@ type Props = {
     };
     signatories: Signatory[];
     signatoryDefaults: Partial<ProjectFields>;
+    canCreateSignatories: boolean;
+    canUpdateSignatories: boolean;
+    signatoryRoleOptions: SignatoryRoleOption[];
+    signatorySystemUsers: SignatorySystemUser[];
     totals: Record<'ADD' | 'NON_ADD', Total>;
     initialStep: WorkspaceStep;
     completion: Completion;
@@ -89,6 +108,10 @@ export default function ProjectEdit({
     project,
     signatories,
     signatoryDefaults,
+    canCreateSignatories,
+    canUpdateSignatories,
+    signatoryRoleOptions,
+    signatorySystemUsers,
     totals,
     initialStep,
     completion,
@@ -131,6 +154,10 @@ export default function ProjectEdit({
                         project={project}
                         signatories={signatories}
                         signatoryDefaults={signatoryDefaults}
+                        canCreateSignatories={canCreateSignatories}
+                        canUpdateSignatories={canUpdateSignatories}
+                        signatoryRoleOptions={signatoryRoleOptions}
+                        signatorySystemUsers={signatorySystemUsers}
                     />
                 </div>
                 <div className={step === 'structure' ? undefined : 'hidden'}>
@@ -184,28 +211,18 @@ function Structure({
             <CardHeader>
                 <CardTitle>Sections and DUPA items</CardTitle>
                 <CardDescription>
-                    Parts I and II may contain DUPAs directly. Part III can use
-                    Part A–E subsections.
+                    Build the project hierarchy in a spreadsheet-style grid.
+                    Sections, subsections, and DUPAs are added as rows.
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-                <div className="flex max-w-xl gap-2">
-                    <Input
-                        value={sectionName}
-                        placeholder="Section name, e.g. PART I. FACILITIES FOR ENGINEER"
-                        onChange={(e) => setSectionName(e.target.value)}
-                    />
-                    <Button type="button" onClick={addSection}>
-                        <Plus /> Add section
-                    </Button>
-                </div>
                 {sections.length === 0 && (
                     <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-3">
                         <div className="mr-auto">
                             <p className="font-medium">No sections yet</p>
                             <p className="text-sm text-muted-foreground">
-                                Start manually above or add editable PART I–III
-                                placeholders.
+                                Start with a new section below or add editable
+                                PART I–III placeholders.
                             </p>
                         </div>
                         <Button
@@ -223,15 +240,77 @@ function Structure({
                         </Button>
                     </div>
                 )}
-                {sections.map((section) => (
-                    <SectionCard key={section.id} section={section} />
-                ))}
+                {sections.length > 0 && (
+                    <div className="overflow-x-auto rounded-lg border">
+                        <div className="min-w-[55rem] text-xs">
+                            <div
+                                className={`${structureRowColumns} border-b-2 bg-muted/60 text-xs font-bold uppercase`}
+                            >
+                                <div className="border-r px-3 py-2 text-center">
+                                    Item no.
+                                </div>
+                                <div className="border-r px-3 py-2 text-center">
+                                    Description
+                                </div>
+                                <div className="border-r px-3 py-2 text-center">
+                                    Unit
+                                </div>
+                                <div className="px-3 py-2 text-center">
+                                    Actions
+                                </div>
+                            </div>
+                            {sections.map((section) => (
+                                <SectionCard
+                                    key={section.id}
+                                    section={section}
+                                    sections={sections}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                )}
+                <div className="overflow-hidden rounded-md border">
+                    <div className="grid grid-cols-[10rem_minmax(20rem,1fr)_auto] bg-primary/5">
+                        <div className="flex items-center border-r px-3 py-2 font-medium text-primary">
+                            New section
+                        </div>
+                        <div className="border-r p-1.5">
+                            <Input
+                                value={sectionName}
+                                placeholder="e.g. PART I. FACILITIES FOR ENGINEER"
+                                onChange={(event) =>
+                                    setSectionName(event.target.value)
+                                }
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        addSection();
+                                    }
+                                }}
+                            />
+                        </div>
+                        <div className="p-1.5">
+                            <Button type="button" onClick={addSection}>
+                                <Plus /> Add section
+                            </Button>
+                        </div>
+                    </div>
+                </div>
             </CardContent>
         </Card>
     );
 }
 
-function SectionCard({ section }: { section: Section }) {
+const structureRowColumns =
+    'grid grid-cols-[9rem_minmax(25rem,1fr)_5rem_16rem]';
+
+function SectionCard({
+    section,
+    sections,
+}: {
+    section: Section;
+    sections: Section[];
+}) {
     const [subName, setSubName] = useState('');
     const [dupa, setDupa] = useState({
         pay_item_no: '',
@@ -239,13 +318,6 @@ function SectionCard({ section }: { section: Section }) {
         unit: '',
         sub_section_id: '',
     });
-    const rename = (url: string, key: string, current: string) => {
-        const value = window.prompt(`Update ${key.replace('_', ' ')}`, current);
-
-        if (value?.trim()) {
-            router.put(url, { [key]: value }, { preserveScroll: true });
-        }
-    };
     const addDupa = () => {
         if (
             !dupa.pay_item_no.trim() ||
@@ -257,8 +329,13 @@ function SectionCard({ section }: { section: Section }) {
 
         router.post(
             `/admin/sections/${section.id}/dupas`,
-            { ...dupa, sub_section_id: dupa.sub_section_id || null },
             {
+                ...dupa,
+                sub_section_id: dupa.sub_section_id || null,
+                stay_on_structure: true,
+            },
+            {
+                preserveScroll: true,
                 onSuccess: () =>
                     setDupa({
                         pay_item_no: '',
@@ -271,12 +348,47 @@ function SectionCard({ section }: { section: Section }) {
     };
 
     return (
-        <div className="rounded-lg border p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-semibold">{section.section}</h3>
-                <div className="flex gap-2">
+        <div>
+            <div
+                className={`${structureRowColumns} border-t bg-primary/10 font-medium`}
+            >
+                <div className="col-span-3 flex min-w-0 items-center gap-2 border-r px-2 py-1">
+                    <span className="shrink-0 text-xs font-bold text-primary uppercase">
+                        Section
+                    </span>
                     <Input
-                        className="w-20"
+                        className="!h-7 min-w-0 flex-1 border-0 bg-transparent px-0 text-xs font-bold uppercase shadow-none focus-visible:ring-0"
+                        defaultValue={section.section}
+                        aria-label={`${section.section} name`}
+                        onBlur={(event) => {
+                            const value = event.target.value.trim();
+
+                            if (!value) {
+                                event.target.value = section.section;
+                            } else if (value !== section.section) {
+                                router.put(
+                                    `/admin/sections/${section.id}`,
+                                    {
+                                        section: value,
+                                        sort_order: section.sort_order,
+                                    },
+                                    { preserveScroll: true },
+                                );
+                            }
+                        }}
+                    />
+                    <span className="shrink-0 text-xs font-normal text-muted-foreground">
+                        {section.items.length +
+                            section.sub_sections.reduce(
+                                (count, sub) => count + sub.items.length,
+                                0,
+                            )}{' '}
+                        item(s)
+                    </span>
+                </div>
+                <div className="flex items-center justify-end gap-1 p-1">
+                    <Input
+                        className="!h-7 w-14 text-xs"
                         type="number"
                         min="0"
                         defaultValue={section.sort_order}
@@ -292,19 +404,6 @@ function SectionCard({ section }: { section: Section }) {
                             )
                         }
                     />
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                            rename(
-                                `/admin/sections/${section.id}`,
-                                'section',
-                                section.section,
-                            )
-                        }
-                    >
-                        Rename
-                    </Button>
                     <ConfirmDialog
                         title="Delete section?"
                         description={`This removes ${section.items.length + section.sub_sections.reduce((n, sub) => n + sub.items.length, 0)} DUPA item(s) and all estimates.`}
@@ -314,21 +413,56 @@ function SectionCard({ section }: { section: Section }) {
                             router.delete(`/admin/sections/${section.id}`)
                         }
                     >
-                        <Button size="sm" variant="destructive">
-                            <Trash2 />
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            className="!h-7 text-xs"
+                        >
+                            <Trash2 /> Delete
                         </Button>
                     </ConfirmDialog>
                 </div>
             </div>
-            <DupaList items={section.items} />
-            <div className="mt-3 space-y-2 border-l-2 pl-3">
+            <DupaList items={section.items} sections={sections} />
+            <div>
                 {section.sub_sections.map((sub) => (
-                    <div key={sub.id} className="space-y-2">
-                        <div className="flex items-center justify-between">
-                            <h4 className="font-medium">{sub.sub_section}</h4>
-                            <div className="flex gap-2">
+                    <div key={sub.id}>
+                        <div
+                            className={`${structureRowColumns} border-t bg-muted/20`}
+                        >
+                            <div className="border-r px-2 py-1 text-center text-muted-foreground">
+                                &nbsp;
+                            </div>
+                            <div className="border-r px-6 py-1">
                                 <Input
-                                    className="h-8 w-20"
+                                    className="!h-7 border-0 bg-transparent text-center text-xs font-bold uppercase shadow-none focus-visible:ring-0"
+                                    defaultValue={sub.sub_section}
+                                    aria-label={`${sub.sub_section} name`}
+                                    onBlur={(event) => {
+                                        const value = event.target.value.trim();
+
+                                        if (!value) {
+                                            event.target.value =
+                                                sub.sub_section;
+                                        } else if (value !== sub.sub_section) {
+                                            router.put(
+                                                `/admin/sub-sections/${sub.id}`,
+                                                {
+                                                    sub_section: value,
+                                                    sort_order: sub.sort_order,
+                                                },
+                                                { preserveScroll: true },
+                                            );
+                                        }
+                                    }}
+                                />
+                            </div>
+                            <div className="border-r px-2 py-1 text-center text-muted-foreground">
+                                &nbsp;
+                            </div>
+                            <div className="flex items-center justify-end gap-1 p-1">
+                                <Input
+                                    className="!h-7 w-14 text-xs"
                                     type="number"
                                     min="0"
                                     defaultValue={sub.sort_order}
@@ -346,19 +480,6 @@ function SectionCard({ section }: { section: Section }) {
                                         )
                                     }
                                 />
-                                <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() =>
-                                        rename(
-                                            `/admin/sub-sections/${sub.id}`,
-                                            'sub_section',
-                                            sub.sub_section,
-                                        )
-                                    }
-                                >
-                                    Rename
-                                </Button>
                                 <ConfirmDialog
                                     title="Delete subsection?"
                                     description={`This removes ${sub.items.length} DUPA item(s) and all estimates.`}
@@ -370,149 +491,391 @@ function SectionCard({ section }: { section: Section }) {
                                         )
                                     }
                                 >
-                                    <Button size="sm" variant="ghost">
-                                        <Trash2 />
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="!h-7 text-xs"
+                                    >
+                                        <Trash2 /> Delete
                                     </Button>
                                 </ConfirmDialog>
                             </div>
                         </div>
-                        <DupaList items={sub.items} />
+                        <DupaList items={sub.items} sections={sections} />
                     </div>
                 ))}
-                <div className="flex max-w-lg gap-2">
-                    <Input
-                        value={subName}
-                        placeholder="Subsection, e.g. PART A - EARTHWORKS"
-                        onChange={(e) => setSubName(e.target.value)}
-                    />
-                    <Button
-                        variant="outline"
-                        onClick={() => {
-                            if (subName.trim()) {
-                                router.post(
-                                    `/admin/sections/${section.id}/sub-sections`,
-                                    { sub_section: subName },
-                                    {
-                                        preserveScroll: true,
-                                        onSuccess: () => setSubName(''),
-                                    },
-                                );
-                            }
-                        }}
-                    >
-                        Add subsection
-                    </Button>
+                <div className={`${structureRowColumns} border-t bg-muted/10`}>
+                    <div className="border-r px-2 py-2" />
+                    <div className="border-r px-2 py-1">
+                        <Input
+                            value={subName}
+                            placeholder="Add subsection, e.g. PART A - EARTHWORKS"
+                            className="!h-7 text-left text-xs font-medium"
+                            onChange={(event) => setSubName(event.target.value)}
+                        />
+                    </div>
+                    <div className="border-r px-2 py-2" />
+                    <div className="p-1">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="!h-7 text-xs"
+                            onClick={() => {
+                                if (subName.trim()) {
+                                    router.post(
+                                        `/admin/sections/${section.id}/sub-sections`,
+                                        { sub_section: subName },
+                                        {
+                                            preserveScroll: true,
+                                            onSuccess: () => setSubName(''),
+                                        },
+                                    );
+                                }
+                            }}
+                        >
+                            <Plus /> Add subsection
+                        </Button>
+                    </div>
                 </div>
             </div>
-            <div className="mt-3 grid gap-2 rounded-md bg-muted/40 p-2 md:grid-cols-[0.8fr_2fr_0.6fr_1fr_auto]">
-                <Input
-                    placeholder="Pay item no."
-                    value={dupa.pay_item_no}
-                    onChange={(e) =>
-                        setDupa({ ...dupa, pay_item_no: e.target.value })
-                    }
-                />
-                <Input
-                    placeholder="Description"
-                    value={dupa.description}
-                    onChange={(e) =>
-                        setDupa({ ...dupa, description: e.target.value })
-                    }
-                />
-                <Input
-                    placeholder="Unit"
-                    value={dupa.unit}
-                    onChange={(e) => setDupa({ ...dupa, unit: e.target.value })}
-                />
-                <select
-                    className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-                    value={dupa.sub_section_id}
-                    onChange={(e) =>
-                        setDupa({ ...dupa, sub_section_id: e.target.value })
-                    }
-                >
-                    <option value="">Directly under section</option>
-                    {section.sub_sections.map((sub) => (
-                        <option key={sub.id} value={sub.id}>
-                            {sub.sub_section}
-                        </option>
-                    ))}
-                </select>
-                <Button onClick={addDupa}>
-                    <Plus /> Add DUPA
-                </Button>
+            <div className={`${structureRowColumns} border-t bg-primary/5`}>
+                <div className="border-r p-1">
+                    <Input
+                        className="!h-7 text-xs"
+                        placeholder="New item no."
+                        value={dupa.pay_item_no}
+                        onChange={(event) =>
+                            setDupa({
+                                ...dupa,
+                                pay_item_no: event.target.value,
+                            })
+                        }
+                    />
+                </div>
+                <div className="grid grid-cols-[minmax(0,1fr)_12rem] gap-1 border-r p-1">
+                    <Input
+                        className="!h-7 text-xs"
+                        placeholder="Description"
+                        value={dupa.description}
+                        onChange={(event) =>
+                            setDupa({
+                                ...dupa,
+                                description: event.target.value,
+                            })
+                        }
+                    />
+                    <select
+                        aria-label="New DUPA subsection"
+                        className="!h-7 w-full rounded-md border border-input bg-background px-2 text-xs"
+                        value={dupa.sub_section_id}
+                        onChange={(event) =>
+                            setDupa({
+                                ...dupa,
+                                sub_section_id: event.target.value,
+                            })
+                        }
+                    >
+                        <option value="">Directly under section</option>
+                        {section.sub_sections.map((sub) => (
+                            <option key={sub.id} value={sub.id}>
+                                {sub.sub_section}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+                <div className="border-r p-1">
+                    <Input
+                        className="!h-7 text-xs"
+                        placeholder="Unit"
+                        value={dupa.unit}
+                        onChange={(event) =>
+                            setDupa({ ...dupa, unit: event.target.value })
+                        }
+                    />
+                </div>
+                <div className="border-r p-1">
+                    <Button
+                        className="!h-7 w-full text-xs"
+                        type="button"
+                        onClick={addDupa}
+                    >
+                        <Plus /> Add DUPA
+                    </Button>
+                </div>
             </div>
         </div>
     );
 }
 
-function DupaList({ items }: { items: Dupa[] }) {
+function DupaList({ items, sections }: { items: Dupa[]; sections: Section[] }) {
     if (!items.length) {
         return null;
     }
 
     return (
-        <div className="mt-2 divide-y rounded-md border">
+        <div className="divide-y">
             {items.map((item) => (
-                <div
-                    key={item.id}
-                    className="flex items-center justify-between gap-2 p-2 text-sm"
-                >
-                    <div>
-                        <span className="font-medium">{item.pay_item_no}</span>{' '}
-                        · {item.description}{' '}
-                        <span className="text-muted-foreground">
-                            ({item.unit})
-                        </span>
-                        <div className="mt-1 flex gap-1">
-                            {item.has_estimate ? (
-                                <Badge variant="secondary">
-                                    <CircleCheck /> Estimate started
-                                </Badge>
-                            ) : (
-                                <Badge variant="outline">
-                                    Estimate not started
-                                </Badge>
-                            )}
-                            {item.needs_review && (
-                                <Badge variant="outline">
-                                    <CircleAlert /> Imported summary
-                                </Badge>
-                            )}
-                        </div>
-                    </div>
-                    <div className="flex flex-wrap justify-end gap-2">
-                        <Button asChild size="sm" variant="outline">
-                            <Link href={`/admin/dupas/${item.id}/edit`}>
-                                <ReceiptText /> Edit estimate
-                            </Link>
-                        </Button>
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                                router.post(`/admin/dupas/${item.id}/duplicate`)
-                            }
-                        >
-                            <Copy /> Duplicate
-                        </Button>
-                        <ConfirmDialog
-                            title="Delete DUPA item?"
-                            description="All ADD/NON-ADD estimates and resource rows will be removed."
-                            confirmLabel="Delete"
-                            destructive
-                            onConfirm={() =>
-                                router.delete(`/admin/dupas/${item.id}`)
-                            }
-                        >
-                            <Button size="sm" variant="destructive">
-                                <Trash2 />
-                            </Button>
-                        </ConfirmDialog>
-                    </div>
-                </div>
+                <InlineDupaRow key={item.id} item={item} sections={sections} />
             ))}
         </div>
+    );
+}
+
+function InlineDupaRow({
+    item,
+    sections,
+}: {
+    item: Dupa;
+    sections: Section[];
+}) {
+    const [estimateOpen, setEstimateOpen] = useState(false);
+    const [duplicateOpen, setDuplicateOpen] = useState(false);
+    const [duplicating, setDuplicating] = useState(false);
+    const details = useForm({
+        section_id: item.section_id,
+        sub_section_id: item.sub_section_id,
+        pay_item_no: item.pay_item_no,
+        description: item.description,
+        unit: item.unit,
+        sort_order: item.sort_order,
+    });
+    const selectedSection = sections.find(
+        (section) => Number(section.id) === Number(details.data.section_id),
+    );
+    const duplicate = (stayOnStructure: boolean) => {
+        setDuplicating(true);
+        router.post(
+            `/admin/dupas/${item.id}/duplicate`,
+            { stay_on_structure: stayOnStructure },
+            {
+                preserveScroll: stayOnStructure,
+                onSuccess: () => setDuplicateOpen(false),
+                onFinish: () => setDuplicating(false),
+            },
+        );
+    };
+
+    return (
+        <form
+            className={`${structureRowColumns} bg-background hover:bg-muted/20`}
+            onSubmit={(event) => {
+                event.preventDefault();
+                details.put(`/admin/dupas/${item.id}`, {
+                    preserveScroll: true,
+                });
+            }}
+        >
+            <div className="flex min-w-0 items-center gap-1 border-r p-1">
+                <Input
+                    className="!h-7 min-w-0 flex-1 text-xs"
+                    aria-label="Pay item number"
+                    value={details.data.pay_item_no}
+                    onChange={(event) =>
+                        details.setData('pay_item_no', event.target.value)
+                    }
+                />
+                <Input
+                    className="!h-7 w-10 shrink-0 px-1 text-center text-xs"
+                    type="number"
+                    min="0"
+                    aria-label={`${item.pay_item_no} display order`}
+                    title="Display order"
+                    value={details.data.sort_order}
+                    onChange={(event) =>
+                        details.setData(
+                            'sort_order',
+                            Number(event.target.value),
+                        )
+                    }
+                />
+            </div>
+            <div className="flex min-w-0 items-center gap-1 border-r p-1">
+                <Input
+                    aria-label="DUPA description"
+                    className="!h-7 min-w-0 flex-1 text-xs"
+                    value={details.data.description}
+                    onChange={(event) =>
+                        details.setData('description', event.target.value)
+                    }
+                />
+                <select
+                    aria-label="Section"
+                    className="!h-7 w-24 min-w-0 shrink-0 rounded-md border border-input bg-background px-1 text-xs"
+                    value={details.data.section_id}
+                    onChange={(event) => {
+                        details.setData(
+                            'section_id',
+                            Number(event.target.value),
+                        );
+                        details.setData('sub_section_id', null);
+                    }}
+                >
+                    {sections.map((section) => (
+                        <option key={section.id} value={section.id}>
+                            {section.section}
+                        </option>
+                    ))}
+                </select>
+                <select
+                    aria-label="Subsection"
+                    className="!h-7 w-24 min-w-0 shrink-0 rounded-md border border-input bg-background px-1 text-xs"
+                    value={details.data.sub_section_id ?? ''}
+                    onChange={(event) =>
+                        details.setData(
+                            'sub_section_id',
+                            event.target.value
+                                ? Number(event.target.value)
+                                : null,
+                        )
+                    }
+                >
+                    <option value="">Directly under section</option>
+                    {selectedSection?.sub_sections.map((sub) => (
+                        <option key={sub.id} value={sub.id}>
+                            {sub.sub_section}
+                        </option>
+                    ))}
+                </select>
+            </div>
+            <div className="border-r p-1">
+                <Input
+                    className="!h-7 text-xs"
+                    aria-label="Unit"
+                    value={details.data.unit}
+                    onChange={(event) =>
+                        details.setData('unit', event.target.value)
+                    }
+                />
+            </div>
+            <div className="flex items-center justify-end gap-1 p-1">
+                {item.has_estimate && (
+                    <CircleCheck
+                        className="size-3.5 shrink-0 text-muted-foreground"
+                        aria-label="Estimate started"
+                    />
+                )}
+                {item.needs_review && (
+                    <CircleAlert
+                        className="size-3.5 shrink-0 text-amber-600"
+                        aria-label="Needs review"
+                    />
+                )}
+                <Button
+                    size="sm"
+                    className="!h-7 px-2 text-xs"
+                    disabled={details.processing}
+                >
+                    {details.processing ? 'Saving…' : 'Save'}
+                </Button>
+                <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="!h-7 px-2 text-xs"
+                    onClick={() => setEstimateOpen(true)}
+                >
+                    <ReceiptText /> Estimate
+                </Button>
+                <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="!h-7 !w-7 p-0"
+                    aria-label={`Duplicate ${item.pay_item_no}`}
+                    onClick={() => setDuplicateOpen(true)}
+                >
+                    <Copy />
+                </Button>
+                <ConfirmDialog
+                    title="Delete DUPA item?"
+                    description="All ADD/NON-ADD estimates and resource rows will be removed."
+                    confirmLabel="Delete"
+                    destructive
+                    onConfirm={() => router.delete(`/admin/dupas/${item.id}`)}
+                >
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="!h-7 !w-7 p-0"
+                        aria-label={`Delete ${item.pay_item_no}`}
+                    >
+                        <Trash2 />
+                    </Button>
+                </ConfirmDialog>
+            </div>
+            <Dialog
+                open={duplicateOpen}
+                onOpenChange={(open) => {
+                    if (!duplicating) {
+                        setDuplicateOpen(open);
+                    }
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Copy DUPA {item.pay_item_no}?</DialogTitle>
+                        <DialogDescription>
+                            The copy includes both ADD and NON-ADD estimates and
+                            their resource rows. Where would you like to go
+                            after copying it?
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={duplicating}
+                            onClick={() => duplicate(true)}
+                        >
+                            Stay on this page
+                        </Button>
+                        <Button
+                            type="button"
+                            disabled={duplicating}
+                            onClick={() => duplicate(false)}
+                        >
+                            Open Estimate page
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+            <Dialog
+                open={estimateOpen}
+                onOpenChange={(open) => {
+                    setEstimateOpen(open);
+
+                    if (!open) {
+                        router.reload();
+                    }
+                }}
+            >
+                <DialogContent
+                    className="flex h-[94vh] max-h-[94vh] w-[96vw] max-w-[96vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[96vw]"
+                    onFocusOutside={(event) => {
+                        // The embedded editor is a separate document. Focusing
+                        // its iframe must not dismiss the estimate dialog.
+                        if (event.target instanceof HTMLIFrameElement) {
+                            event.preventDefault();
+                        }
+                    }}
+                >
+                    <DialogHeader className="gap-1 border-b px-4 py-2">
+                        <DialogTitle className="text-base">
+                            Detailed Unit Price Analysis — {item.pay_item_no}
+                        </DialogTitle>
+                        <DialogDescription className="text-xs">
+                            DUPA details and ADD/NON-ADD resource estimates.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <iframe
+                        className="min-h-0 w-full flex-1 border-0 bg-background"
+                        src={`/admin/dupas/${item.id}/edit?embedded=1`}
+                        title={`Estimate for ${item.pay_item_no}`}
+                    />
+                </DialogContent>
+            </Dialog>
+        </form>
     );
 }
 

@@ -22,7 +22,7 @@ class ProjectEstimateController extends Controller
 {
     public function __construct(private readonly DupaEstimateService $estimates) {}
 
-    public function edit(ProjectItem $dupa): Response
+    public function edit(Request $request, ProjectItem $dupa): Response
     {
         $project = $dupa->section->project;
         Gate::authorize('update', $project);
@@ -51,40 +51,44 @@ class ProjectEstimateController extends Controller
             ->values();
         $position = $orderedIds->search((int) $dupa->id);
 
-        return Inertia::render('admin/projects/dupa-edit', [
-            'project' => $project->only(['id', 'project_code', 'project_name']),
-            'dupa' => [
-                ...$dupa->only(['id', 'section_id', 'sub_section_id', 'pay_item_no', 'description', 'unit', 'sort_order']),
-                'estimates' => $dupa->estimates->keyBy('estimate_type'),
-            ],
-            'sections' => $project->sections()->with('subSections:id,section_id,sub_section')->orderBy('sort_order')->get(['id', 'project_id', 'section']),
-            'catalogs' => [
-                'labors' => Labor::query()->orderBy('manpower')->get(['id', 'manpower', 'rates', 'types']),
-                'equipment' => Equipment::query()->orderBy('equipment')->get(['id', 'equipment', 'rental']),
-                'items' => Item::query()->orderBy('description')->get(['id', 'itemcode', 'description', 'unit'])
-                    ->map(function (Item $item): array {
-                        $price = $this->currentOrLatestPrice($item->itemcode);
+        return Inertia::render(
+            $request->boolean('embedded') ? 'admin/projects/dupa-embed' : 'admin/projects/dupa-edit',
+            [
+                'embedded' => $request->boolean('embedded'),
+                'project' => $project->only(['id', 'project_code', 'project_name']),
+                'dupa' => [
+                    ...$dupa->only(['id', 'section_id', 'sub_section_id', 'pay_item_no', 'description', 'unit', 'sort_order']),
+                    'estimates' => $dupa->estimates->keyBy('estimate_type'),
+                ],
+                'sections' => $project->sections()->with('subSections:id,section_id,sub_section')->orderBy('sort_order')->get(['id', 'project_id', 'section']),
+                'catalogs' => [
+                    'labors' => Labor::query()->orderBy('manpower')->get(['id', 'manpower', 'rates', 'types']),
+                    'equipment' => Equipment::query()->orderBy('equipment')->get(['id', 'equipment', 'rental']),
+                    'items' => Item::query()->orderBy('description')->get(['id', 'itemcode', 'description', 'unit'])
+                        ->map(function (Item $item): array {
+                            $price = $this->currentOrLatestPrice($item->itemcode);
 
-                        return [...$item->toArray(), 'price' => (float) ($price ?? 0)];
-                    }),
+                            return [...$item->toArray(), 'price' => (float) ($price ?? 0)];
+                        }),
+                ],
+                'itemGroups' => DB::table('material_dupa')
+                    ->join('dupas', 'dupas.id', '=', 'material_dupa.dupa_id')
+                    ->join('sections', 'sections.id', '=', 'dupas.section_id')
+                    ->where('sections.project_id', $project->id)
+                    ->whereNotNull('material_dupa.group')
+                    ->where('material_dupa.group', '<>', '')
+                    ->distinct()
+                    ->orderBy('material_dupa.group')
+                    ->pluck('material_dupa.group'),
+                'navigation' => [
+                    'previous_id' => $position !== false && $position > 0 ? $orderedIds[$position - 1] : null,
+                    'next_id' => $position !== false && $position < $orderedIds->count() - 1 ? $orderedIds[$position + 1] : null,
+                    'position' => $position === false ? 1 : $position + 1,
+                    'total' => $orderedIds->count(),
+                ],
+                'canCreateResources' => Gate::allows('libraries.create'),
             ],
-            'itemGroups' => DB::table('material_dupa')
-                ->join('dupas', 'dupas.id', '=', 'material_dupa.dupa_id')
-                ->join('sections', 'sections.id', '=', 'dupas.section_id')
-                ->where('sections.project_id', $project->id)
-                ->whereNotNull('material_dupa.group')
-                ->where('material_dupa.group', '<>', '')
-                ->distinct()
-                ->orderBy('material_dupa.group')
-                ->pluck('material_dupa.group'),
-            'navigation' => [
-                'previous_id' => $position !== false && $position > 0 ? $orderedIds[$position - 1] : null,
-                'next_id' => $position !== false && $position < $orderedIds->count() - 1 ? $orderedIds[$position + 1] : null,
-                'position' => $position === false ? 1 : $position + 1,
-                'total' => $orderedIds->count(),
-            ],
-            'canCreateResources' => Gate::allows('libraries.create'),
-        ]);
+        );
     }
 
     public function updateDupa(Request $request, ProjectItem $dupa): RedirectResponse

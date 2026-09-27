@@ -1,15 +1,27 @@
 import { Head } from '@inertiajs/react';
 import PageHeader from '@/components/page-header';
 import ProjectForm from '@/components/project-form';
-import type { Signatory } from '@/components/project-form';
+import type {
+    Signatory,
+    SignatoryRoleOption,
+    SignatorySystemUser,
+} from '@/components/project-form';
 import type { ProjectFields } from '@/components/project-form';
 
 export default function ProjectCreate({
     signatories,
     signatoryDefaults,
+    canCreateSignatories,
+    canUpdateSignatories,
+    signatoryRoleOptions,
+    signatorySystemUsers,
 }: {
     signatories: Signatory[];
     signatoryDefaults: Partial<ProjectFields>;
+    canCreateSignatories: boolean;
+    canUpdateSignatories: boolean;
+    signatoryRoleOptions: SignatoryRoleOption[];
+    signatorySystemUsers: SignatorySystemUser[];
 }) {
     return (
         <>
@@ -23,6 +35,10 @@ export default function ProjectCreate({
                 <ProjectForm
                     signatories={signatories}
                     signatoryDefaults={signatoryDefaults}
+                    canCreateSignatories={canCreateSignatories}
+                    canUpdateSignatories={canUpdateSignatories}
+                    signatoryRoleOptions={signatoryRoleOptions}
+                    signatorySystemUsers={signatorySystemUsers}
                 />
             </div>
         </>

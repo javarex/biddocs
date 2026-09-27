@@ -191,7 +191,9 @@ class ProjectController extends Controller
     private function editableItem(ProjectItem $item): array
     {
         return [
-            ...$item->only(['id', 'pay_item_no', 'description', 'unit']),
+            ...$item->only([
+                'id', 'section_id', 'sub_section_id', 'pay_item_no', 'description', 'unit', 'sort_order',
+            ]),
             'has_estimate' => $item->estimates->contains(
                 fn ($estimate): bool => (float) $estimate->quantity > 0 || (float) $estimate->total_cost > 0,
             ),
@@ -323,6 +325,7 @@ class ProjectController extends Controller
     private function signatoryFormData(?Project $project = null, ?User $user = null): array
     {
         $assignments = SignatoryRoleAssignment::query()
+            ->with('signatory:cats_no,name')
             ->whereIn('role', array_keys(Signatory::ROLES))
             ->whereHas('signatory', fn ($query) => $query->where('is_active', true))
             ->get(['role', 'cats_no'])
@@ -354,6 +357,18 @@ class ProjectController extends Controller
             'signatoryDefaults' => ['prepared_by' => $preparer?->cats_no] + collect(array_keys(Signatory::ROLES))
                 ->mapWithKeys(fn (string $role): array => [$role => $assignments->get($role)?->cats_no])
                 ->all(),
+            'canCreateSignatories' => Gate::allows('libraries.create'),
+            'canUpdateSignatories' => Gate::allows('libraries.update'),
+            'signatoryRoleOptions' => collect(Signatory::ROLES)
+                ->map(fn (string $label, string $role): array => [
+                    'key' => $role,
+                    'label' => $label,
+                    'cats_no' => $assignments->get($role)?->cats_no,
+                    'name' => $assignments->get($role)?->signatory?->name,
+                ])->values()->all(),
+            'signatorySystemUsers' => User::query()
+                ->orderBy('name')->orderBy('username')
+                ->get(['id', 'name', 'username', 'is_active'])->all(),
         ];
     }
 
