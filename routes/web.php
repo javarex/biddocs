@@ -62,6 +62,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('projects/{project}/import', [ImportController::class, 'projectImport'])->name('projects.import');
         Route::post('projects/{project}/import/preview', [ImportController::class, 'previewForProject'])->name('projects.import.preview');
         Route::post('projects/{project}/sections', [ProjectStructureController::class, 'storeSection'])->name('projects.sections.store');
+        Route::put('projects/{project}/structure/order', [ProjectStructureController::class, 'reorder'])->name('projects.structure.order');
         Route::post('projects/{project}/starter-structure', [ProjectStructureController::class, 'applyStarterStructure'])->name('projects.starter-structure.store');
         Route::put('sections/{section}', [ProjectStructureController::class, 'updateSection'])->name('sections.update');
         Route::delete('sections/{section}', [ProjectStructureController::class, 'destroySection'])->name('sections.destroy');

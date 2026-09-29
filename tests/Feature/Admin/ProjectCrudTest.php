@@ -253,6 +253,31 @@ class ProjectCrudTest extends TestCase
         );
     }
 
+    public function test_structure_rows_can_be_reordered_only_with_their_siblings(): void
+    {
+        $admin = User::factory()->create(['is_super_admin' => true]);
+        $project = $this->project();
+        $first = $project->sections()->create(['section' => 'First', 'sort_order' => 1]);
+        $second = $project->sections()->create(['section' => 'Second', 'sort_order' => 2]);
+        $subA = $first->subSections()->create(['sub_section' => 'A', 'sort_order' => 1]);
+        $subB = $first->subSections()->create(['sub_section' => 'B', 'sort_order' => 2]);
+        $foreignSub = $second->subSections()->create(['sub_section' => 'Other', 'sort_order' => 1]);
+
+        $this->actingAs($admin)->put(route('admin.projects.structure.order', $project), [
+            'type' => 'section', 'ids' => [$second->id, $first->id],
+        ])->assertRedirect();
+        $this->assertSame([$second->id, $first->id], $project->sections()->orderBy('sort_order')->pluck('id')->all());
+
+        $this->actingAs($admin)->put(route('admin.projects.structure.order', $project), [
+            'type' => 'sub_section', 'parent_id' => $first->id, 'ids' => [$subB->id, $subA->id],
+        ])->assertRedirect();
+        $this->assertSame([$subB->id, $subA->id], $first->subSections()->orderBy('sort_order')->pluck('id')->all());
+
+        $this->actingAs($admin)->put(route('admin.projects.structure.order', $project), [
+            'type' => 'sub_section', 'parent_id' => $first->id, 'ids' => [$subA->id, $foreignSub->id],
+        ])->assertStatus(422);
+    }
+
     public function test_manually_created_dupa_starts_with_resource_estimates(): void
     {
         $admin = User::factory()->create(['is_super_admin' => true]);
