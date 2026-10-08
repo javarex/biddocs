@@ -28,6 +28,47 @@ class ProjectStructureController extends Controller
         return back()->with('success', 'Section added.');
     }
 
+    public function reorder(Request $request, Project $project): RedirectResponse
+    {
+        Gate::authorize('update', $project);
+        $data = $request->validate([
+            'type' => ['required', Rule::in(['section', 'sub_section', 'dupa'])],
+            'parent_id' => ['nullable', 'integer'],
+            'sub_section_id' => ['nullable', 'integer'],
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['required', 'integer', 'distinct'],
+        ]);
+
+        $section = $data['type'] === 'section'
+            ? null
+            : $project->sections()->findOrFail($data['parent_id'] ?? 0);
+        if ($data['type'] === 'dupa' && isset($data['sub_section_id'])) {
+            $section->subSections()->findOrFail($data['sub_section_id']);
+        }
+
+        $query = match ($data['type']) {
+            'section' => $project->sections(),
+            'sub_section' => $section->subSections(),
+            'dupa' => $section->projectItems()
+                ->where('sub_section_id', $data['sub_section_id'] ?? null),
+        };
+
+        $existing = $query->pluck('id')->map(fn ($id) => (int) $id)->sort()->values()->all();
+        $submitted = collect($data['ids'])->map(fn ($id) => (int) $id)->sort()->values()->all();
+        if ($existing !== $submitted) {
+            abort(422, 'The row list has changed. Refresh the page and try again.');
+        }
+
+        DB::transaction(function () use ($query, $data, $project): void {
+            foreach ($data['ids'] as $index => $id) {
+                (clone $query)->whereKey($id)->update(['sort_order' => $index + 1]);
+            }
+            $this->touch($project);
+        });
+
+        return back()->with('success', 'Row order saved.');
+    }
+
     public function applyStarterStructure(Project $project): RedirectResponse
     {
         Gate::authorize('update', $project);

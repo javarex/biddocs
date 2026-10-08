@@ -3,11 +3,12 @@ import {
     CircleAlert,
     CircleCheck,
     Copy,
+    GripVertical,
     Plus,
     ReceiptText,
     Trash2,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import ConfirmDialog from '@/components/confirm-dialog';
 import PageHeader from '@/components/page-header';
 import ProjectForm from '@/components/project-form';
@@ -97,6 +98,24 @@ type Completion = {
     configured_dupas: number;
     imported_summaries: number;
     missing_signatories: string[];
+};
+type RowKind = 'section' | 'sub_section' | 'dupa';
+type DragRow = {
+    kind: RowKind;
+    id: number;
+    parent: number;
+    subSection: number | null;
+};
+type DragControls = {
+    handle: (row: DragRow) => React.ReactNode;
+    target: (
+        row: DragRow,
+        siblings: number[],
+    ) => {
+        onDragOver: (event: React.DragEvent) => void;
+        onDrop: (event: React.DragEvent) => void;
+        'data-drag-over': boolean;
+    };
 };
 
 const money = new Intl.NumberFormat('en-PH', {
@@ -194,6 +213,77 @@ function Structure({
     sections: Section[];
 }) {
     const [sectionName, setSectionName] = useState('');
+    const [dragged, setDragged] = useState<DragRow | null>(null);
+    const draggedRef = useRef<DragRow | null>(null);
+    const [over, setOver] = useState<number | null>(null);
+    const drag: DragControls = {
+        handle: (row) => (
+            <span
+                draggable
+                title="Drag to reorder"
+                aria-label="Drag to reorder"
+                className="inline-flex shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
+                onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', String(row.id));
+                    draggedRef.current = row;
+                    setDragged(row);
+                }}
+                onDragEnd={() => {
+                    draggedRef.current = null;
+                    setDragged(null);
+                    setOver(null);
+                }}
+            >
+                <GripVertical className="size-4" />
+            </span>
+        ),
+        target: (row, siblings) => ({
+            'data-drag-over': over === row.id && dragged?.kind === row.kind,
+            onDragOver: (event) => {
+                const active = draggedRef.current;
+
+                if (
+                    active?.kind === row.kind &&
+                    active.parent === row.parent &&
+                    active.subSection === row.subSection
+                ) {
+                    event.preventDefault();
+                    setOver(row.id);
+                }
+            },
+            onDrop: (event) => {
+                event.preventDefault();
+                const active = draggedRef.current;
+
+                if (
+                    !active ||
+                    active.kind !== row.kind ||
+                    active.parent !== row.parent ||
+                    active.subSection !== row.subSection ||
+                    active.id === row.id
+                ) {
+                    return;
+                }
+
+                const ids = siblings.filter((id) => id !== active.id);
+                ids.splice(ids.indexOf(row.id), 0, active.id);
+                router.put(
+                    `/admin/projects/${projectId}/structure/order`,
+                    {
+                        type: row.kind,
+                        parent_id: row.parent || null,
+                        sub_section_id: row.subSection,
+                        ids,
+                    },
+                    { preserveScroll: true },
+                );
+                draggedRef.current = null;
+                setDragged(null);
+                setOver(null);
+            },
+        }),
+    };
     const addSection = () => {
         if (!sectionName.trim()) {
             return;
@@ -211,8 +301,9 @@ function Structure({
             <CardHeader>
                 <CardTitle>Sections and DUPA items</CardTitle>
                 <CardDescription>
-                    Build the project hierarchy in a spreadsheet-style grid.
-                    Sections, subsections, and DUPAs are added as rows.
+                    Edit cells in the grid and drag handles to reorder rows. Tab
+                    moves between fields; Enter adds a new row. Save changed
+                    DUPA rows with their Save button.
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -241,15 +332,15 @@ function Structure({
                     </div>
                 )}
                 {sections.length > 0 && (
-                    <div className="overflow-x-auto rounded-lg border">
+                    <div className="overflow-x-auto rounded-lg border shadow-sm">
                         <div className="min-w-[55rem] text-xs">
                             <div
-                                className={`${structureRowColumns} border-b-2 bg-muted/60 text-xs font-bold uppercase`}
+                                className={`${structureRowColumns} sticky top-0 z-10 border-b-2 bg-muted text-xs font-bold uppercase`}
                             >
                                 <div className="border-r px-3 py-2 text-center">
                                     Item no.
                                 </div>
-                                <div className="border-r px-3 py-2 text-center">
+                                <div className="border-r px-3 py-2 text-left">
                                     Description
                                 </div>
                                 <div className="border-r px-3 py-2 text-center">
@@ -264,6 +355,7 @@ function Structure({
                                     key={section.id}
                                     section={section}
                                     sections={sections}
+                                    drag={drag}
                                 />
                             ))}
                         </div>
@@ -307,11 +399,24 @@ const structureRowColumns =
 function SectionCard({
     section,
     sections,
+    drag,
 }: {
     section: Section;
     sections: Section[];
+    drag: DragControls;
 }) {
     const [subName, setSubName] = useState('');
+    const addSubSection = () => {
+        if (!subName.trim()) {
+            return;
+        }
+
+        router.post(
+            `/admin/sections/${section.id}/sub-sections`,
+            { sub_section: subName.trim() },
+            { preserveScroll: true, onSuccess: () => setSubName('') },
+        );
+    };
     const [dupa, setDupa] = useState({
         pay_item_no: '',
         description: '',
@@ -350,9 +455,24 @@ function SectionCard({
     return (
         <div>
             <div
-                className={`${structureRowColumns} border-t bg-primary/10 font-medium`}
+                {...drag.target(
+                    {
+                        kind: 'section',
+                        id: section.id,
+                        parent: 0,
+                        subSection: null,
+                    },
+                    sections.map((row) => row.id),
+                )}
+                className={`${structureRowColumns} border-t bg-primary/10 font-medium data-[drag-over=true]:ring-2 data-[drag-over=true]:ring-primary data-[drag-over=true]:ring-inset`}
             >
-                <div className="col-span-3 flex min-w-0 items-center gap-2 border-r px-2 py-1">
+                <div className="col-span-3 flex min-w-0 items-center gap-2 border-r px-2 py-1 focus-within:bg-primary/15">
+                    {drag.handle({
+                        kind: 'section',
+                        id: section.id,
+                        parent: 0,
+                        subSection: null,
+                    })}
                     <span className="shrink-0 text-xs font-bold text-primary uppercase">
                         Section
                     </span>
@@ -393,16 +513,22 @@ function SectionCard({
                         min="0"
                         defaultValue={section.sort_order}
                         aria-label={`${section.section} display order`}
-                        onBlur={(event) =>
+                        onBlur={(event) => {
+                            const order = Number(event.target.value);
+
+                            if (order === section.sort_order) {
+                                return;
+                            }
+
                             router.put(
                                 `/admin/sections/${section.id}`,
                                 {
                                     section: section.section,
-                                    sort_order: Number(event.target.value),
+                                    sort_order: order,
                                 },
                                 { preserveScroll: true },
-                            )
-                        }
+                            );
+                        }}
                     />
                     <ConfirmDialog
                         title="Delete section?"
@@ -423,19 +549,33 @@ function SectionCard({
                     </ConfirmDialog>
                 </div>
             </div>
-            <DupaList items={section.items} sections={sections} />
+            <DupaList items={section.items} sections={sections} drag={drag} />
             <div>
                 {section.sub_sections.map((sub) => (
                     <div key={sub.id}>
                         <div
-                            className={`${structureRowColumns} border-t bg-muted/20`}
+                            {...drag.target(
+                                {
+                                    kind: 'sub_section',
+                                    id: sub.id,
+                                    parent: section.id,
+                                    subSection: null,
+                                },
+                                section.sub_sections.map((row) => row.id),
+                            )}
+                            className={`${structureRowColumns} border-t bg-muted/20 data-[drag-over=true]:ring-2 data-[drag-over=true]:ring-primary data-[drag-over=true]:ring-inset`}
                         >
-                            <div className="border-r px-2 py-1 text-center text-muted-foreground">
-                                &nbsp;
+                            <div className="flex items-center border-r px-2 py-1 text-muted-foreground">
+                                {drag.handle({
+                                    kind: 'sub_section',
+                                    id: sub.id,
+                                    parent: section.id,
+                                    subSection: null,
+                                })}
                             </div>
-                            <div className="border-r px-6 py-1">
+                            <div className="border-r px-6 py-1 focus-within:bg-primary/5">
                                 <Input
-                                    className="!h-7 border-0 bg-transparent text-center text-xs font-bold uppercase shadow-none focus-visible:ring-0"
+                                    className="!h-7 border-0 bg-transparent text-left text-xs font-bold uppercase shadow-none focus-visible:ring-0"
                                     defaultValue={sub.sub_section}
                                     aria-label={`${sub.sub_section} name`}
                                     onBlur={(event) => {
@@ -467,18 +607,24 @@ function SectionCard({
                                     min="0"
                                     defaultValue={sub.sort_order}
                                     aria-label={`${sub.sub_section} display order`}
-                                    onBlur={(event) =>
+                                    onBlur={(event) => {
+                                        const order = Number(
+                                            event.target.value,
+                                        );
+
+                                        if (order === sub.sort_order) {
+                                            return;
+                                        }
+
                                         router.put(
                                             `/admin/sub-sections/${sub.id}`,
                                             {
                                                 sub_section: sub.sub_section,
-                                                sort_order: Number(
-                                                    event.target.value,
-                                                ),
+                                                sort_order: order,
                                             },
                                             { preserveScroll: true },
-                                        )
-                                    }
+                                        );
+                                    }}
                                 />
                                 <ConfirmDialog
                                     title="Delete subsection?"
@@ -501,7 +647,11 @@ function SectionCard({
                                 </ConfirmDialog>
                             </div>
                         </div>
-                        <DupaList items={sub.items} sections={sections} />
+                        <DupaList
+                            items={sub.items}
+                            sections={sections}
+                            drag={drag}
+                        />
                     </div>
                 ))}
                 <div className={`${structureRowColumns} border-t bg-muted/10`}>
@@ -512,6 +662,12 @@ function SectionCard({
                             placeholder="Add subsection, e.g. PART A - EARTHWORKS"
                             className="!h-7 text-left text-xs font-medium"
                             onChange={(event) => setSubName(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                    event.preventDefault();
+                                    addSubSection();
+                                }
+                            }}
                         />
                     </div>
                     <div className="border-r px-2 py-2" />
@@ -520,25 +676,25 @@ function SectionCard({
                             type="button"
                             variant="outline"
                             className="!h-7 text-xs"
-                            onClick={() => {
-                                if (subName.trim()) {
-                                    router.post(
-                                        `/admin/sections/${section.id}/sub-sections`,
-                                        { sub_section: subName },
-                                        {
-                                            preserveScroll: true,
-                                            onSuccess: () => setSubName(''),
-                                        },
-                                    );
-                                }
-                            }}
+                            onClick={addSubSection}
                         >
                             <Plus /> Add subsection
                         </Button>
                     </div>
                 </div>
             </div>
-            <div className={`${structureRowColumns} border-t bg-primary/5`}>
+            <div
+                className={`${structureRowColumns} border-t bg-primary/5 focus-within:bg-primary/10`}
+                onKeyDown={(event) => {
+                    if (
+                        event.key === 'Enter' &&
+                        event.target instanceof HTMLInputElement
+                    ) {
+                        event.preventDefault();
+                        addDupa();
+                    }
+                }}
+            >
                 <div className="border-r p-1">
                     <Input
                         className="!h-7 text-xs"
@@ -607,7 +763,15 @@ function SectionCard({
     );
 }
 
-function DupaList({ items, sections }: { items: Dupa[]; sections: Section[] }) {
+function DupaList({
+    items,
+    sections,
+    drag,
+}: {
+    items: Dupa[];
+    sections: Section[];
+    drag: DragControls;
+}) {
     if (!items.length) {
         return null;
     }
@@ -615,7 +779,13 @@ function DupaList({ items, sections }: { items: Dupa[]; sections: Section[] }) {
     return (
         <div className="divide-y">
             {items.map((item) => (
-                <InlineDupaRow key={item.id} item={item} sections={sections} />
+                <InlineDupaRow
+                    key={item.id}
+                    item={item}
+                    sections={sections}
+                    drag={drag}
+                    siblings={items.map((row) => row.id)}
+                />
             ))}
         </div>
     );
@@ -624,9 +794,13 @@ function DupaList({ items, sections }: { items: Dupa[]; sections: Section[] }) {
 function InlineDupaRow({
     item,
     sections,
+    drag,
+    siblings,
 }: {
     item: Dupa;
     sections: Section[];
+    drag: DragControls;
+    siblings: number[];
 }) {
     const [estimateOpen, setEstimateOpen] = useState(false);
     const [duplicateOpen, setDuplicateOpen] = useState(false);
@@ -657,7 +831,16 @@ function InlineDupaRow({
 
     return (
         <form
-            className={`${structureRowColumns} bg-background hover:bg-muted/20`}
+            {...drag.target(
+                {
+                    kind: 'dupa',
+                    id: item.id,
+                    parent: item.section_id,
+                    subSection: item.sub_section_id,
+                },
+                siblings,
+            )}
+            className={`${structureRowColumns} bg-background focus-within:bg-primary/5 hover:bg-muted/20 data-[drag-over=true]:ring-2 data-[drag-over=true]:ring-primary data-[drag-over=true]:ring-inset`}
             onSubmit={(event) => {
                 event.preventDefault();
                 details.put(`/admin/dupas/${item.id}`, {
@@ -666,6 +849,12 @@ function InlineDupaRow({
             }}
         >
             <div className="flex min-w-0 items-center gap-1 border-r p-1">
+                {drag.handle({
+                    kind: 'dupa',
+                    id: item.id,
+                    parent: item.section_id,
+                    subSection: item.sub_section_id,
+                })}
                 <Input
                     className="!h-7 min-w-0 flex-1 text-xs"
                     aria-label="Pay item number"
@@ -763,9 +952,13 @@ function InlineDupaRow({
                 <Button
                     size="sm"
                     className="!h-7 px-2 text-xs"
-                    disabled={details.processing}
+                    disabled={details.processing || !details.isDirty}
                 >
-                    {details.processing ? 'Saving…' : 'Save'}
+                    {details.processing
+                        ? 'Saving…'
+                        : details.isDirty
+                          ? 'Save'
+                          : 'Saved'}
                 </Button>
                 <Button
                     type="button"
