@@ -2,9 +2,13 @@
 
 namespace App\Providers;
 
+use App\Models\Category;
+use App\Models\Item;
 use App\Models\Project;
 use App\Models\Role;
 use App\Models\User;
+use App\Policies\CategoryPolicy;
+use App\Policies\ItemPolicy;
 use App\Policies\ProjectPolicy;
 use App\Policies\RolePolicy;
 use App\Policies\UserPolicy;
@@ -38,6 +42,8 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(User::class, UserPolicy::class);
         Gate::policy(Role::class, RolePolicy::class);
         Gate::policy(Project::class, ProjectPolicy::class);
+        Gate::policy(Item::class, ItemPolicy::class);
+        Gate::policy(Category::class, CategoryPolicy::class);
 
         foreach ([
             'libraries.view',

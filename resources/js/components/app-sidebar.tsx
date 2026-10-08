@@ -113,11 +113,6 @@ export function AppSidebar() {
                                 icon: BookOpen,
                             },
                             {
-                                title: 'Prices',
-                                href: '/admin/libraries/prices',
-                                icon: BookOpen,
-                            },
-                            {
                                 title: 'Signatories',
                                 href: '/admin/libraries/signatories',
                                 icon: Users,

@@ -11,9 +11,6 @@ beforeEach(function () {
 });
 
 it('supports listing creating updating and deleting each catalog', function (string $catalog, array $data, string $field, string $updated) {
-    if ($catalog === 'prices') {
-        DB::table('items')->insert(['itemcode' => 'M-1', 'category_id' => 1, 'description' => 'Cement', 'unit' => 'bag']);
-    }
     $url = '/admin/libraries/'.$catalog;
     $this->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->component('admin/libraries/index')->where('catalog', $catalog));
     $this->from($url)->post($url, $data)->assertRedirect($url)->assertSessionHasNoErrors();
@@ -27,7 +24,6 @@ it('supports listing creating updating and deleting each catalog', function (str
     ['labors', ['manpower' => 'Foreman', 'rates' => 500, 'types' => 'Contract'], 'manpower', 'Mason'],
     ['equipments', ['equipment' => 'Mixer', 'rental' => 1000], 'equipment', 'Truck'],
     ['items', ['itemcode' => 'M-1', 'category_id' => 1, 'description' => 'Cement', 'unit' => 'bag'], 'itemcode', 'M-2'],
-    ['prices', ['itemcode' => 'M-1', 'price' => 100, 'effective_from' => '2026-09-12', 'effective_to' => null], 'price', '120.50'],
 ]);
 
 it('validates catalog contracts and protects priced items', function () {
@@ -35,7 +31,7 @@ it('validates catalog contracts and protects priced items', function () {
     $item = ['itemcode' => 'M-1', 'category_id' => 1, 'description' => 'Cement', 'unit' => 'bag'];
     $id = DB::table('items')->insertGetId($item);
     $this->post('/admin/libraries/items', $item)->assertSessionHasErrors('itemcode');
-    $this->post('/admin/libraries/prices', ['itemcode' => 'missing', 'price' => -1, 'effective_from' => '2026-09-12', 'effective_to' => '2026-09-11'])->assertSessionHasErrors(['itemcode', 'price', 'effective_to']);
+    $this->post('/admin/libraries/prices', ['itemcode' => 'M-1', 'price' => 100, 'effective_from' => '2026-09-12'])->assertNotFound();
     DB::table('prices')->insert(['itemcode' => 'M-1', 'price' => 100, 'effective_from' => '2026-09-12']);
     $this->put("/admin/libraries/items/{$id}", [...$item, 'itemcode' => 'M-2'])->assertSessionHasNoErrors();
     $this->assertDatabaseHas('prices', ['itemcode' => 'M-2']);
@@ -60,6 +56,49 @@ it('shows the latest unit cost and effectivity on the items page', function () {
         ->where('records.data.0.effective_to', null));
 });
 
+it('saves item prices from the items library without duplicating unchanged prices', function () {
+    $url = '/admin/libraries/items';
+    $item = ['itemcode' => 'P-1', 'category_id' => 1, 'description' => 'Paint', 'unit' => 'can'];
+
+    $this->post($url, [...$item, 'price' => '120.50'])->assertSessionHasErrors('price');
+    $this->post($url, $item)->assertSessionHasNoErrors();
+    $id = DB::table('items')->where('itemcode', 'P-1')->value('id');
+    $this->put("{$url}/{$id}", [...$item, 'price' => '120.50'])->assertSessionHasNoErrors();
+    $this->assertDatabaseHas('prices', [
+        'itemcode' => 'P-1', 'price' => '120.50', 'effective_from' => today()->toDateString(),
+    ]);
+
+    $this->put("{$url}/{$id}", [...$item, 'description' => 'Paint, white', 'price' => '120.50'])
+        ->assertSessionHasNoErrors();
+    $this->assertSame(1, DB::table('prices')->where('itemcode', 'P-1')->count());
+
+    $this->put("{$url}/{$id}", [...$item, 'price' => '135.00'])->assertSessionHasNoErrors();
+    $this->assertSame(2, DB::table('prices')->where('itemcode', 'P-1')->count());
+    $this->get($url)->assertInertia(fn (Assert $page) => $page
+        ->where('records.data.0.unit_cost', '135.00'));
+
+    $this->put("{$url}/{$id}", [...$item, 'price' => '-1'])->assertSessionHasErrors('price');
+});
+
+it('lists only the selected items price history in newest effective date order', function () {
+    DB::table('items')->insert([
+        ['itemcode' => 'P-1', 'category_id' => 1, 'description' => 'Paint', 'unit' => 'can'],
+        ['itemcode' => 'P-2', 'category_id' => 1, 'description' => 'Brush', 'unit' => 'piece'],
+    ]);
+    $id = DB::table('items')->where('itemcode', 'P-1')->value('id');
+    DB::table('prices')->insert([
+        ['itemcode' => 'P-1', 'price' => 100, 'effective_from' => '2025-01-01'],
+        ['itemcode' => 'P-1', 'price' => 120, 'effective_from' => '2026-01-01'],
+        ['itemcode' => 'P-2', 'price' => 500, 'effective_from' => '2026-01-01'],
+    ]);
+
+    $this->getJson("/admin/libraries/items/{$id}/price-history")
+        ->assertOk()
+        ->assertJsonPath('total', 2)
+        ->assertJsonPath('data.0.price', '120.00')
+        ->assertJsonPath('data.1.price', '100.00');
+});
+
 it('quick creates labor and equipment as json for the dupa editor', function () {
     $this->postJson('/admin/libraries/labors', [
         'manpower' => 'Quick Foreman', 'rates' => 850, 'types' => 'Contract',
@@ -81,6 +120,7 @@ it('quick creates labor and equipment as json for the dupa editor', function () 
 it('denies catalog access without permissions', function () {
     $this->actingAs(User::factory()->create(['is_super_admin' => false, 'is_active' => true]));
     $this->get('/admin/libraries/labors')->assertForbidden();
+    $this->getJson('/admin/libraries/items/1/price-history')->assertForbidden();
     $this->post('/admin/libraries/labors', [])->assertForbidden();
     $this->put('/admin/libraries/labors/1', [])->assertForbidden();
     $this->delete('/admin/libraries/labors/1')->assertForbidden();

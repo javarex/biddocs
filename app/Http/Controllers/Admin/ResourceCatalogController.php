@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Category;
+use App\Models\Item;
 use App\Models\Signatory;
 use App\Models\User;
 use App\Services\CategorySyncService;
@@ -31,7 +33,11 @@ class ResourceCatalogController extends Controller
 
     public function index(Request $request, string $catalog): Response
     {
-        Gate::authorize('libraries.view');
+        if ($catalog === 'items') {
+            Gate::authorize('viewAny', Item::class);
+        } else {
+            Gate::authorize('libraries.view');
+        }
         $definition = $this->definition($catalog);
         $search = trim((string) $request->string('search'));
         $displayFields = $catalog === 'items'
@@ -104,17 +110,31 @@ class ResourceCatalogController extends Controller
                 ? User::query()->orderBy('name')->orderBy('username')
                     ->get(['id', 'name', 'username', 'is_active']) : [],
             'can' => [
-                'create' => Gate::allows('libraries.create'),
-                'update' => Gate::allows('libraries.update'),
-                'delete' => Gate::allows('libraries.delete'),
-                'sync' => Gate::allows('libraries.create') && Gate::allows('libraries.update'),
+                'create' => $catalog === 'items' ? Gate::allows('create', Item::class)
+                    : ($catalog !== 'prices' && Gate::allows('libraries.create')),
+                'update' => $catalog === 'items' ? Gate::allows('updateAny', Item::class)
+                    : ($catalog !== 'prices' && Gate::allows('libraries.update')),
+                'delete' => $catalog === 'items' ? Gate::allows('deleteAny', Item::class)
+                    : ($catalog !== 'prices' && Gate::allows('libraries.delete')),
+                'sync' => $catalog === 'items'
+                    ? Gate::allows('sync', Item::class)
+                    : ($catalog === 'categories' && Gate::allows('sync', Category::class)),
+                'encodePrice' => $catalog === 'items'
+                    && Gate::allows('updateAny', Item::class)
+                    && Gate::allows('encodePrices', Item::class),
+                'syncPrices' => Gate::allows('encodePrices', Item::class),
             ],
         ]);
     }
 
     public function store(Request $request, string $catalog): RedirectResponse|JsonResponse
     {
-        Gate::authorize('libraries.create');
+        abort_if($catalog === 'prices', 404);
+        if ($catalog === 'items') {
+            Gate::authorize('create', Item::class);
+        } else {
+            Gate::authorize('libraries.create');
+        }
         $definition = $this->definition($catalog);
         $data = $this->validated($request, $catalog);
         if ($request->expectsJson() && ! in_array($catalog, ['labors', 'equipments'], true)) {
@@ -124,6 +144,11 @@ class ResourceCatalogController extends Controller
             $this->saveSignatory($data);
 
             return back()->with('success', 'Signatory created successfully.');
+        }
+        if ($catalog === 'items') {
+            $this->saveItem($data);
+
+            return back()->with('success', 'Record created successfully.');
         }
         if (in_array($catalog, ['labors', 'categories'], true)) {
             $data['created_at'] = $data['updated_at'] = now();
@@ -145,13 +170,26 @@ class ResourceCatalogController extends Controller
 
     public function update(Request $request, string $catalog, string $record): RedirectResponse
     {
-        Gate::authorize('libraries.update');
+        abort_if($catalog === 'prices', 404);
+        if ($catalog === 'items') {
+            Gate::authorize('update', Item::query()->findOrFail($record));
+        } else {
+            Gate::authorize('libraries.update');
+        }
         $this->find($catalog, $record);
         $data = $this->validated($request, $catalog, $record);
         if ($catalog === 'signatories') {
             $this->saveSignatory($data, $record);
 
             return back()->with('success', 'Signatory updated successfully.');
+        }
+        if ($catalog === 'items') {
+            if (filled($data['price'] ?? null)) {
+                Gate::authorize('encodePrices', Item::class);
+            }
+            $this->saveItem($data, $record);
+
+            return back()->with('success', 'Record updated successfully.');
         }
         if (in_array($catalog, ['labors', 'categories'], true)) {
             $data['updated_at'] = now();
@@ -163,7 +201,12 @@ class ResourceCatalogController extends Controller
 
     public function destroy(string $catalog, string $record): RedirectResponse
     {
-        Gate::authorize('libraries.delete');
+        abort_if($catalog === 'prices', 404);
+        if ($catalog === 'items') {
+            Gate::authorize('delete', Item::query()->findOrFail($record));
+        } else {
+            Gate::authorize('libraries.delete');
+        }
         $this->find($catalog, $record);
         if ($catalog === 'signatories') {
             throw ValidationException::withMessages([
@@ -191,8 +234,7 @@ class ResourceCatalogController extends Controller
 
     public function syncCategories(CategorySyncService $service): RedirectResponse
     {
-        Gate::authorize('libraries.create');
-        Gate::authorize('libraries.update');
+        Gate::authorize('sync', Category::class);
         $count = $service->sync();
 
         return back()->with('category_sync', "Synced {$count} categories successfully.");
@@ -200,15 +242,30 @@ class ResourceCatalogController extends Controller
 
     public function syncItems(Request $request, ItemSyncService $service): RedirectResponse
     {
-        Gate::authorize('libraries.create');
-        Gate::authorize('libraries.update');
+        Gate::authorize('sync', Item::class);
         $data = $request->validate([
             'categories' => ['required', 'array', 'min:1'],
             'categories.*' => ['required', 'integer', 'distinct', Rule::exists('categories', 'IDCATEGORY')],
+            'sync_prices' => ['sometimes', 'boolean'],
         ]);
-        $count = $service->sync($data['categories']);
+        if ($data['sync_prices'] ?? false) {
+            Gate::authorize('encodePrices', Item::class);
+        }
+        $count = $service->sync($data['categories'], (bool) ($data['sync_prices'] ?? false));
 
         return back()->with('item_sync', "Synced {$count} items successfully.");
+    }
+
+    public function itemPriceHistory(string $record): JsonResponse
+    {
+        $item = Item::query()->findOrFail($record);
+        Gate::authorize('view', $item);
+
+        return response()->json(DB::table('prices')
+            ->where('itemcode', $item->itemcode)
+            ->orderByDesc('effective_from')
+            ->orderByDesc('id')
+            ->paginate(20, ['id', 'price', 'effective_from', 'effective_to']));
     }
 
     private function key(string $catalog): string
@@ -269,6 +326,9 @@ class ResourceCatalogController extends Controller
                 'category_id' => ['required', 'integer', 'min:1', 'max:4294967295'],
                 'description' => ['required', 'string', 'max:10000'],
                 'unit' => ['required', 'string', 'max:255'],
+                'price' => $record === null
+                    ? ['prohibited']
+                    : ['nullable', 'numeric', 'min:0', 'max:9999999999999.99', 'decimal:0,2'],
             ],
             'prices' => [
                 'itemcode' => ['required', 'string', Rule::exists('items', 'itemcode')],
@@ -289,6 +349,47 @@ class ResourceCatalogController extends Controller
             ],
             default => throw new \InvalidArgumentException('Unknown resource catalog.'),
         });
+    }
+
+    /** @param array<string, mixed> $data */
+    private function saveItem(array $data, ?string $record = null): void
+    {
+        DB::transaction(function () use ($data, $record): void {
+            $price = $data['price'] ?? null;
+            unset($data['price']);
+
+            if ($record === null) {
+                DB::table('items')->insert($data);
+            } else {
+                DB::table('items')->where('id', $record)->update($data);
+            }
+
+            if ($price === null || $price === '') {
+                return;
+            }
+
+            $this->saveItemPrice($data['itemcode'], $price);
+        });
+    }
+
+    private function saveItemPrice(string $itemcode, string|int|float $price): void
+    {
+        $latestPrice = DB::table('prices')->where('itemcode', $itemcode)
+            ->orderByDesc('effective_from')->orderByDesc('id')->value('price');
+        $submittedPrice = explode('.', (string) $price);
+        $storedPrice = $latestPrice === null ? null : explode('.', (string) $latestPrice);
+        $samePrice = $storedPrice !== null
+            && ltrim($submittedPrice[0], '0') === ltrim($storedPrice[0], '0')
+            && str_pad($submittedPrice[1] ?? '', 2, '0') === str_pad($storedPrice[1] ?? '', 2, '0');
+
+        if (! $samePrice) {
+            DB::table('prices')->insert([
+                'itemcode' => $itemcode,
+                'price' => $price,
+                'effective_from' => today()->toDateString(),
+                'effective_to' => null,
+            ]);
+        }
     }
 
     /** @param array<string, mixed> $data */

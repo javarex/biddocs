@@ -12,7 +12,7 @@ use Illuminate\Validation\ValidationException;
 class ItemSyncService
 {
     /** @param list<int> $categories */
-    public function sync(array $categories): int
+    public function sync(array $categories, bool $syncPrices = false): int
     {
         $baseUrl = rtrim((string) config('services.pis.url'), '/');
         if (! filter_var($baseUrl, FILTER_VALIDATE_URL) || ! in_array(parse_url($baseUrl, PHP_URL_SCHEME), ['http', 'https'], true)) {
@@ -61,21 +61,24 @@ class ItemSyncService
 
             return $row;
         }, $rows);
-        $validator = Validator::make(['items' => $rows], [
+        $rules = [
             'items' => ['present', 'array'],
             'items.*' => ['required', 'array'],
             'items.*.ITEMCODE' => ['required', 'string', 'max:255', 'distinct:ignore_case'],
             'items.*.IDCATEGORY' => ['required', 'integer', Rule::in($categories)],
             'items.*.DESCRIPTION' => ['required', 'string', 'max:10000'],
             'items.*.UNIT' => ['required', 'string', 'max:255'],
-            'items.*.price' => ['required', 'numeric', 'min:0'],
-            'items.*.effective_from' => ['required', 'date_format:Y-m-d'],
-            'items.*.effective_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:items.*.effective_from'],
-        ]);
+        ];
+        if ($syncPrices) {
+            $rules['items.*.price'] = ['required', 'numeric', 'min:0'];
+            $rules['items.*.effective_from'] = ['required', 'date_format:Y-m-d'];
+            $rules['items.*.effective_to'] = ['nullable', 'date_format:Y-m-d', 'after_or_equal:items.*.effective_from'];
+        }
+        $validator = Validator::make(['items' => $rows], $rules);
         if ($validator->fails()) {
             $this->fail('PIS returned invalid item data: '.$validator->errors()->first().' No items were synced.');
         }
-        DB::transaction(function () use ($rows): void {
+        DB::transaction(function () use ($rows, $syncPrices): void {
             $records = array_map(fn (array $row): array => [
                 'itemcode' => $row['ITEMCODE'],
                 'category_id' => (int) $row['IDCATEGORY'],
@@ -85,13 +88,15 @@ class ItemSyncService
             foreach (array_chunk($records, 200) as $chunk) {
                 DB::table('items')->upsert($chunk, ['itemcode'], ['category_id', 'description', 'unit']);
             }
-            foreach ($rows as $row) {
-                DB::table('prices')->insert([
-                    'itemcode' => $row['ITEMCODE'],
-                    'price' => $row['price'],
-                    'effective_from' => $row['effective_from'],
-                    'effective_to' => filled($row['effective_to'] ?? null) ? $row['effective_to'] : null,
-                ]);
+            if ($syncPrices) {
+                foreach ($rows as $row) {
+                    DB::table('prices')->insert([
+                        'itemcode' => $row['ITEMCODE'],
+                        'price' => $row['price'],
+                        'effective_from' => $row['effective_from'],
+                        'effective_to' => filled($row['effective_to'] ?? null) ? $row['effective_to'] : null,
+                    ]);
+                }
             }
         });
 

@@ -169,7 +169,7 @@ class CategoryLibraryTest extends TestCase
             ],
         ])]);
         for ($i = 0; $i < 2; $i++) {
-            $this->from('/admin/libraries/items')->post('/admin/libraries/items/sync', ['categories' => [3, 8]])
+            $this->from('/admin/libraries/items')->post('/admin/libraries/items/sync', ['categories' => [3, 8], 'sync_prices' => true])
                 ->assertSessionHasNoErrors()->assertSessionHas('item_sync', 'Synced 2 items successfully.');
         }
         $this->assertDatabaseCount('items', 2);
@@ -193,6 +193,24 @@ class CategoryLibraryTest extends TestCase
             && $request->hasHeader('Content-Type', 'application/json'));
         $this->get('/admin/libraries/items')->assertOk()->assertInertia(fn (Assert $page) => $page
             ->component('admin/libraries/index')->has('categories', 2));
+    }
+
+    public function test_item_sync_skips_prices_by_default_and_keeps_existing_prices(): void
+    {
+        DB::table('categories')->insert(['IDCATEGORY' => 3, 'CATEGORY_DESCRIPTION' => 'Parts', 'is_active' => true]);
+        DB::table('items')->insert(['itemcode' => '001', 'category_id' => 3, 'description' => 'Old', 'unit' => 'pc']);
+        DB::table('prices')->insert(['itemcode' => '001', 'price' => 50, 'effective_from' => '2025-01-01']);
+        Http::fake(['*' => Http::response([
+            ['ITEMCODE' => '001', 'IDCATEGORY' => 3, 'DESCRIPTION' => 'Updated', 'UNIT' => 'box', 'price' => 'invalid'],
+            ['ITEMCODE' => '002', 'IDCATEGORY' => 3, 'DESCRIPTION' => 'New', 'UNIT' => 'pc'],
+        ])]);
+
+        $this->post('/admin/libraries/items/sync', ['categories' => [3]])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('items', ['itemcode' => '001', 'description' => 'Updated', 'unit' => 'box']);
+        $this->assertDatabaseHas('items', ['itemcode' => '002', 'description' => 'New']);
+        $this->assertDatabaseCount('prices', 1);
+        $this->assertDatabaseHas('prices', ['itemcode' => '001', 'price' => 50]);
     }
 
     public function test_item_sync_validates_selection_before_requesting_pis(): void
@@ -219,7 +237,7 @@ class CategoryLibraryTest extends TestCase
             ],
         ])]);
 
-        $this->post('/admin/libraries/items/sync', ['categories' => [33]])->assertSessionHasNoErrors();
+        $this->post('/admin/libraries/items/sync', ['categories' => [33], 'sync_prices' => true])->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('items', ['itemcode' => 'EXISTING', 'description' => 'Updated item', 'unit' => 'box']);
         $this->assertDatabaseHas('items', ['itemcode' => 'NEW', 'unit' => 'N/A']);
@@ -252,7 +270,7 @@ class CategoryLibraryTest extends TestCase
             'price' => 10, 'effective_from' => '2026-09-30', 'effective_to' => '2026-09-01',
         ]])]);
 
-        $this->post('/admin/libraries/items/sync', ['categories' => [3]])->assertSessionHasErrors('sync');
+        $this->post('/admin/libraries/items/sync', ['categories' => [3], 'sync_prices' => true])->assertSessionHasErrors('sync');
 
         $this->assertDatabaseCount('items', 0);
         $this->assertDatabaseCount('prices', 0);

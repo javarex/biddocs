@@ -21,12 +21,17 @@ export type SyncCategory = {
 
 export default function ItemSyncDialog({
     categories,
+    canSyncPrices,
 }: {
     categories: SyncCategory[];
+    canSyncPrices: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
-    const form = useForm<{ categories: number[] }>({ categories: [] });
+    const form = useForm<{ categories: number[]; sync_prices: boolean }>({
+        categories: [],
+        sync_prices: false,
+    });
     const visible = categories.filter((category) =>
         category.CATEGORY_DESCRIPTION.toLowerCase().includes(
             search.toLowerCase(),
@@ -39,6 +44,10 @@ export default function ItemSyncDialog({
             onOpenChange={(value) => {
                 if (!form.processing) {
                     setOpen(value);
+
+                    if (!value) {
+                        form.setData('sync_prices', false);
+                    }
                 }
             }}
         >
@@ -60,7 +69,10 @@ export default function ItemSyncDialog({
                         event.preventDefault();
                         form.post('/admin/libraries/items/sync', {
                             preserveScroll: true,
-                            onSuccess: () => setOpen(false),
+                            onSuccess: () => {
+                                setOpen(false);
+                                form.setData('sync_prices', false);
+                            },
                         });
                     }}
                 >
@@ -144,6 +156,40 @@ export default function ItemSyncDialog({
                             </p>
                         )}
                     </div>
+                    {canSyncPrices && (
+                        <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+                            <div>
+                                <p className="text-sm font-medium">
+                                    Sync prices
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    Import price and effective dates for the
+                                    selected items.
+                                </p>
+                            </div>
+                            <Button
+                                type="button"
+                                role="switch"
+                                aria-label="Sync prices"
+                                aria-checked={form.data.sync_prices}
+                                variant={
+                                    form.data.sync_prices
+                                        ? 'default'
+                                        : 'outline'
+                                }
+                                size="sm"
+                                disabled={form.processing}
+                                onClick={() =>
+                                    form.setData(
+                                        'sync_prices',
+                                        !form.data.sync_prices,
+                                    )
+                                }
+                            >
+                                {form.data.sync_prices ? 'On' : 'Off'}
+                            </Button>
+                        </div>
+                    )}
                     {Object.entries(form.errors).map(([key, message]) => (
                         <InputError key={key} message={message} />
                     ))}
@@ -152,7 +198,10 @@ export default function ItemSyncDialog({
                             type="button"
                             variant="outline"
                             disabled={form.processing}
-                            onClick={() => setOpen(false)}
+                            onClick={() => {
+                                setOpen(false);
+                                form.setData('sync_prices', false);
+                            }}
                         >
                             Cancel
                         </Button>

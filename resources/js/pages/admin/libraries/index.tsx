@@ -1,5 +1,5 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import ConfirmDialog from '@/components/confirm-dialog';
 import DataTable from '@/components/data-table';
 import EmptyState from '@/components/empty-state';
@@ -38,6 +38,18 @@ type SystemUser = {
     username: string;
     is_active: boolean;
 };
+type PriceHistoryEntry = {
+    id: number;
+    price: string;
+    effective_from: string;
+    effective_to: string | null;
+};
+type PriceHistoryPage = {
+    data: PriceHistoryEntry[];
+    current_page: number;
+    last_page: number;
+    total: number;
+};
 type Props = {
     catalog: string;
     title: string;
@@ -50,7 +62,14 @@ type Props = {
     signatoryRoles: SignatoryRole[];
     systemUsers: SystemUser[];
     syncMessage?: string | null;
-    can: { create: boolean; update: boolean; delete: boolean; sync: boolean };
+    can: {
+        create: boolean;
+        update: boolean;
+        delete: boolean;
+        sync: boolean;
+        encodePrice: boolean;
+        syncPrices: boolean;
+    };
 };
 const labels: Record<string, string> = {
     IDCATEGORY: 'Category ID',
@@ -108,32 +127,86 @@ function Library({
     const [search, setSearch] = useState(filters.search);
     const [open, setOpen] = useState(false);
     const [editing, setEditing] = useState<string | number | null>(null);
+    const formFields =
+        catalog === 'items' && can.encodePrice && editing !== null
+            ? [...fields, 'price']
+            : fields;
     const [deleteError, setDeleteError] = useState('');
+    const [historyItem, setHistoryItem] = useState<RecordRow | null>(null);
+    const [historyPage, setHistoryPage] = useState(1);
+    const [history, setHistory] = useState<PriceHistoryPage | null>(null);
+    const [historyError, setHistoryError] = useState('');
     const syncForm = useForm<Record<string, string>>({});
     const form = useForm<Record<string, string | string[]>>(
         Object.fromEntries(
-            fields.map((field) => [field, field === 'roles' ? [] : '']),
+            formFields.map((field) => [field, field === 'roles' ? [] : '']),
         ),
     );
     const showForm = (record?: RecordRow) => {
+        const fieldsForRecord =
+            catalog === 'items' && can.encodePrice && record
+                ? [...fields, 'price']
+                : fields;
         setEditing(record?.id ?? null);
         form.clearErrors();
         form.setData(
             Object.fromEntries(
-                fields.map((field) => [
+                fieldsForRecord.map((field) => [
                     field,
                     field === 'roles'
                         ? record
                             ? recordRoles(record)
                             : []
-                        : String(
-                              record?.[field] ??
-                                  (field === 'is_active' ? '1' : ''),
-                          ),
+                        : field === 'price'
+                          ? String(record?.unit_cost ?? '')
+                          : String(
+                                record?.[field] ??
+                                    (field === 'is_active' ? '1' : ''),
+                            ),
                 ]),
             ),
         );
         setOpen(true);
+    };
+
+    useEffect(() => {
+        if (!historyItem) {
+            return;
+        }
+
+        const controller = new AbortController();
+        fetch(`${url}/${historyItem.id}/price-history?page=${historyPage}`, {
+            headers: { Accept: 'application/json' },
+            signal: controller.signal,
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error('Unable to load price history.');
+                }
+
+                return response.json() as Promise<PriceHistoryPage>;
+            })
+            .then((page) => setHistory(page))
+            .catch((error: unknown) => {
+                if (controller.signal.aborted) {
+                    return;
+                }
+
+                setHistoryError(
+                    error instanceof Error
+                        ? error.message
+                        : 'Unable to load price history.',
+                );
+            });
+
+        return () => controller.abort();
+    }, [historyItem, historyPage, url]);
+
+    const showHistory = (record: RecordRow) => {
+        setHistory(null);
+        setHistoryError('');
+        setHistoryPage(1);
+        setHistoryItem(record);
     };
 
     return (
@@ -161,7 +234,10 @@ function Library({
                                 </Button>
                             )}
                             {catalog === 'items' && can.sync && (
-                                <ItemSyncDialog categories={categories} />
+                                <ItemSyncDialog
+                                    categories={categories}
+                                    canSyncPrices={can.syncPrices}
+                                />
                             )}
                             {can.create && (
                                 <Button onClick={() => showForm()}>
@@ -219,7 +295,8 @@ function Library({
                                             : labels[field]}
                                     </th>
                                 ))}
-                                {(can.update ||
+                                {(catalog === 'items' ||
+                                    can.update ||
                                     (can.delete &&
                                         catalog !== 'signatories')) && (
                                     <th className="px-4 py-3 font-medium">
@@ -292,11 +369,23 @@ function Library({
                                             )}
                                         </td>
                                     ))}
-                                    {(can.update ||
+                                    {(catalog === 'items' ||
+                                        can.update ||
                                         (can.delete &&
                                             catalog !== 'signatories')) && (
                                         <td className="px-4 py-3">
                                             <div className="flex gap-2">
+                                                {catalog === 'items' && (
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() =>
+                                                            showHistory(record)
+                                                        }
+                                                    >
+                                                        Price history
+                                                    </Button>
+                                                )}
                                                 {can.update && (
                                                     <Button
                                                         size="sm"
@@ -421,6 +510,110 @@ function Library({
                 <Pagination links={records.links} />
             </div>
             <Dialog
+                open={historyItem !== null}
+                onOpenChange={(value) => {
+                    if (!value) {
+                        setHistoryItem(null);
+                    }
+                }}
+            >
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Price history</DialogTitle>
+                        <DialogDescription>
+                            {String(historyItem?.itemcode ?? '')} —{' '}
+                            {String(historyItem?.description ?? '')}
+                        </DialogDescription>
+                    </DialogHeader>
+                    {historyError ? (
+                        <p role="alert" className="text-sm text-destructive">
+                            {historyError}
+                        </p>
+                    ) : history === null ? (
+                        <p className="text-sm text-muted-foreground">
+                            Loading…
+                        </p>
+                    ) : history.data.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                            No prices recorded for this item.
+                        </p>
+                    ) : (
+                        <>
+                            <DataTable>
+                                <thead className="bg-muted/50">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left font-medium">
+                                            Price
+                                        </th>
+                                        <th className="px-4 py-3 text-left font-medium">
+                                            Effective from
+                                        </th>
+                                        <th className="px-4 py-3 text-left font-medium">
+                                            Effective to
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                    {history.data.map((entry) => (
+                                        <tr key={entry.id}>
+                                            <td className="px-4 py-3">
+                                                {Number(
+                                                    entry.price,
+                                                ).toLocaleString('en-PH', {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                })}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                {entry.effective_from}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                {entry.effective_to ?? '—'}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </DataTable>
+                            <div className="flex items-center justify-between gap-3 text-sm">
+                                <span>{history.total} price records</span>
+                                <div className="flex items-center gap-2">
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={historyPage <= 1}
+                                        onClick={() => {
+                                            setHistory(null);
+                                            setHistoryPage((page) => page - 1);
+                                        }}
+                                    >
+                                        Previous
+                                    </Button>
+                                    <span>
+                                        {history.current_page} of{' '}
+                                        {history.last_page}
+                                    </span>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={
+                                            historyPage >= history.last_page
+                                        }
+                                        onClick={() => {
+                                            setHistory(null);
+                                            setHistoryPage((page) => page + 1);
+                                        }}
+                                    >
+                                        Next
+                                    </Button>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </DialogContent>
+            </Dialog>
+            <Dialog
                 open={open}
                 onOpenChange={(value) => {
                     if (!form.processing) {
@@ -454,7 +647,7 @@ function Library({
                             }
                         }}
                     >
-                        {fields.map((field) => {
+                        {formFields.map((field) => {
                             if (field === 'roles') {
                                 const selectedRoles = Array.isArray(
                                     form.data.roles,
@@ -601,6 +794,9 @@ function Library({
                                             'effective_to',
                                             'fccode',
                                             'user_id',
+                                            ...(catalog === 'items'
+                                                ? ['price']
+                                                : []),
                                         ].includes(field)
                                             ? ' (optional)'
                                             : ''}
@@ -666,6 +862,9 @@ function Library({
                                                 ![
                                                     'effective_to',
                                                     'fccode',
+                                                    ...(catalog === 'items'
+                                                        ? ['price']
+                                                        : []),
                                                 ].includes(field)
                                             }
                                             readOnly={
