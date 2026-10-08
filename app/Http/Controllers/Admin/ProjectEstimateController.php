@@ -64,13 +64,13 @@ class ProjectEstimateController extends Controller
                 'catalogs' => [
                     'labors' => Labor::query()->orderBy('manpower')->get(['id', 'manpower', 'rates', 'types']),
                     'equipment' => Equipment::query()->orderBy('equipment')->get(['id', 'equipment', 'rental']),
-                    'items' => Item::query()->orderBy('description')->get(['id', 'itemcode', 'description', 'unit'])
-                        ->map(function (Item $item): array {
-                            $price = $this->currentOrLatestPrice($item->itemcode);
-
-                            return [...$item->toArray(), 'price' => (float) ($price ?? 0)];
-                        }),
+                    'items' => $this->pricedItems(),
                 ],
+                'syncCategories' => Gate::allows('libraries.create')
+                    ? DB::table('categories')->orderBy('CATEGORY_DESCRIPTION')->get(['IDCATEGORY', 'CATEGORY_DESCRIPTION', 'fccode'])
+                    : [],
+                'canSyncItems' => Gate::allows('libraries.create') && Gate::allows('libraries.update'),
+                'syncMessage' => $request->session()->get('item_sync'),
                 'itemGroups' => DB::table('material_dupa')
                     ->join('dupas', 'dupas.id', '=', 'material_dupa.dupa_id')
                     ->join('sections', 'sections.id', '=', 'dupas.section_id')
@@ -230,19 +230,33 @@ class ProjectEstimateController extends Controller
         })->all();
     }
 
-    private function currentOrLatestPrice(string $itemcode): mixed
+    /** @return \Illuminate\Support\Collection<int, array<string, mixed>> */
+    private function pricedItems(): \Illuminate\Support\Collection
     {
-        $prices = DB::table('prices')->where('itemcode', $itemcode);
-        $activePrice = (clone $prices)
-            ->where('effective_from', '<=', now()->toDateString())
-            ->where(fn ($query) => $query->whereNull('effective_to')->orWhere('effective_to', '>=', now()->toDateString()))
-            ->orderByDesc('effective_from')
-            ->orderByDesc('id')
-            ->value('price');
+        $today = now()->toDateString();
 
-        return $activePrice ?? $prices
-            ->orderByDesc('effective_from')
-            ->orderByDesc('id')
-            ->value('price');
+        return DB::table('items')
+            ->select(['items.id', 'items.itemcode', 'items.description', 'items.unit'])
+            ->selectSub(function ($query) use ($today): void {
+                $query->from('prices')
+                    ->select('price')
+                    ->whereColumn('prices.itemcode', 'items.itemcode')
+                    ->orderByRaw(
+                        'CASE WHEN effective_from <= ? AND (effective_to IS NULL OR effective_to >= ?) THEN 0 ELSE 1 END',
+                        [$today, $today],
+                    )
+                    ->orderByDesc('effective_from')
+                    ->orderByDesc('id')
+                    ->limit(1);
+            }, 'catalog_price')
+            ->orderBy('items.description')
+            ->get()
+            ->map(fn (object $item): array => [
+                'id' => $item->id,
+                'itemcode' => $item->itemcode,
+                'description' => $item->description,
+                'unit' => $item->unit,
+                'price' => (float) ($item->catalog_price ?? 0),
+            ]);
     }
 }

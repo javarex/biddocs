@@ -127,6 +127,7 @@ function Library({
     const [search, setSearch] = useState(filters.search);
     const [open, setOpen] = useState(false);
     const [editing, setEditing] = useState<string | number | null>(null);
+    const [viewingItem, setViewingItem] = useState<RecordRow | null>(null);
     const formFields =
         catalog === 'items' && can.encodePrice && editing !== null
             ? [...fields, 'price']
@@ -239,7 +240,7 @@ function Library({
                                     canSyncPrices={can.syncPrices}
                                 />
                             )}
-                            {can.create && (
+                            {catalog !== 'items' && can.create && (
                                 <Button onClick={() => showForm()}>
                                     Add record
                                 </Button>
@@ -386,17 +387,31 @@ function Library({
                                                         Price history
                                                     </Button>
                                                 )}
-                                                {can.update && (
+                                                {catalog === 'items' && (
                                                     <Button
                                                         size="sm"
                                                         variant="outline"
                                                         onClick={() =>
-                                                            showForm(record)
+                                                            setViewingItem(
+                                                                record,
+                                                            )
                                                         }
                                                     >
-                                                        Edit
+                                                        View
                                                     </Button>
                                                 )}
+                                                {catalog !== 'items' &&
+                                                    can.update && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() =>
+                                                                showForm(record)
+                                                            }
+                                                        >
+                                                            Edit
+                                                        </Button>
+                                                    )}
                                                 {catalog === 'signatories' &&
                                                     can.update && (
                                                         <ConfirmDialog
@@ -509,6 +524,62 @@ function Library({
                 )}
                 <Pagination links={records.links} />
             </div>
+            <Dialog
+                open={viewingItem !== null}
+                onOpenChange={(value) => {
+                    if (!value) {
+                        setViewingItem(null);
+                    }
+                }}
+            >
+                <DialogContent className="max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>View item</DialogTitle>
+                        <DialogDescription>
+                            Item details are read-only.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <dl className="space-y-4">
+                        {[...new Set([...fields, ...displayFields])].map(
+                            (field) => (
+                                <div key={field} className="space-y-1">
+                                    <dt className="text-sm font-medium">
+                                        {field === 'category_id'
+                                            ? 'Category'
+                                            : (labels[field] ?? field)}
+                                    </dt>
+                                    <dd className="text-sm whitespace-pre-wrap text-muted-foreground">
+                                        {field === 'category_id'
+                                            ? (categoryDescriptions.get(
+                                                  Number(viewingItem?.[field]),
+                                              ) ?? 'Unknown category')
+                                            : field === 'unit_cost' &&
+                                                viewingItem?.[field] != null
+                                              ? Number(
+                                                    viewingItem[field],
+                                                ).toLocaleString('en-PH', {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                })
+                                              : String(
+                                                    viewingItem?.[field] ?? '—',
+                                                )}
+                                    </dd>
+                                </div>
+                            ),
+                        )}
+                    </dl>
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setViewingItem(null)}
+                        >
+                            Close
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
             <Dialog
                 open={historyItem !== null}
                 onOpenChange={(value) => {

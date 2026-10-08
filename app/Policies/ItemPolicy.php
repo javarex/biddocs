@@ -19,7 +19,7 @@ class ItemPolicy
 
     public function create(User $user): bool
     {
-        return $user->hasPermissionTo('items.create');
+        return false;
     }
 
     public function updateAny(User $user): bool

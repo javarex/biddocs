@@ -23,14 +23,13 @@ it('supports listing creating updating and deleting each catalog', function (str
 })->with([
     ['labors', ['manpower' => 'Foreman', 'rates' => 500, 'types' => 'Contract'], 'manpower', 'Mason'],
     ['equipments', ['equipment' => 'Mixer', 'rental' => 1000], 'equipment', 'Truck'],
-    ['items', ['itemcode' => 'M-1', 'category_id' => 1, 'description' => 'Cement', 'unit' => 'bag'], 'itemcode', 'M-2'],
 ]);
 
 it('validates catalog contracts and protects priced items', function () {
     $this->post('/admin/libraries/labors', ['manpower' => 'Worker', 'rates' => -1, 'types' => 'Invalid'])->assertSessionHasErrors(['rates', 'types']);
     $item = ['itemcode' => 'M-1', 'category_id' => 1, 'description' => 'Cement', 'unit' => 'bag'];
     $id = DB::table('items')->insertGetId($item);
-    $this->post('/admin/libraries/items', $item)->assertSessionHasErrors('itemcode');
+    $this->post('/admin/libraries/items', $item)->assertForbidden();
     $this->post('/admin/libraries/prices', ['itemcode' => 'M-1', 'price' => 100, 'effective_from' => '2026-09-12'])->assertNotFound();
     DB::table('prices')->insert(['itemcode' => 'M-1', 'price' => 100, 'effective_from' => '2026-09-12']);
     $this->put("/admin/libraries/items/{$id}", [...$item, 'itemcode' => 'M-2'])->assertSessionHasNoErrors();
@@ -60,9 +59,7 @@ it('saves item prices from the items library without duplicating unchanged price
     $url = '/admin/libraries/items';
     $item = ['itemcode' => 'P-1', 'category_id' => 1, 'description' => 'Paint', 'unit' => 'can'];
 
-    $this->post($url, [...$item, 'price' => '120.50'])->assertSessionHasErrors('price');
-    $this->post($url, $item)->assertSessionHasNoErrors();
-    $id = DB::table('items')->where('itemcode', 'P-1')->value('id');
+    $id = DB::table('items')->insertGetId($item);
     $this->put("{$url}/{$id}", [...$item, 'price' => '120.50'])->assertSessionHasNoErrors();
     $this->assertDatabaseHas('prices', [
         'itemcode' => 'P-1', 'price' => '120.50', 'effective_from' => today()->toDateString(),
@@ -117,11 +114,26 @@ it('quick creates labor and equipment as json for the dupa editor', function () 
     $this->assertDatabaseHas('equipments', ['equipment' => 'Quick Mixer', 'rental' => 1500]);
 });
 
+it('rejects manual item creation even for super administrators', function () {
+    $data = [
+        'itemcode' => 'M-7', 'category_id' => 7, 'description' => 'Quick Cement',
+        'unit' => 'bag', 'price' => 125.50,
+    ];
+
+    $this->post('/admin/libraries/items', $data)->assertForbidden();
+    $this->postJson('/admin/libraries/items/quick', $data)->assertForbidden();
+    $this->assertDatabaseMissing('items', ['itemcode' => 'M-7']);
+    $this->assertDatabaseMissing('prices', ['itemcode' => 'M-7']);
+    $this->get('/admin/libraries/items')->assertInertia(fn (Assert $page) => $page
+        ->where('can.create', false));
+});
+
 it('denies catalog access without permissions', function () {
     $this->actingAs(User::factory()->create(['is_super_admin' => false, 'is_active' => true]));
     $this->get('/admin/libraries/labors')->assertForbidden();
     $this->getJson('/admin/libraries/items/1/price-history')->assertForbidden();
     $this->post('/admin/libraries/labors', [])->assertForbidden();
+    $this->postJson('/admin/libraries/items/quick', [])->assertForbidden();
     $this->put('/admin/libraries/labors/1', [])->assertForbidden();
     $this->delete('/admin/libraries/labors/1')->assertForbidden();
 });

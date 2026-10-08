@@ -25,6 +25,7 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('libraries/items/sync', [ResourceCatalogController::class, 'syncItems'])->name('libraries.items.sync');
         Route::get('libraries/items/{record}/price-history', [ResourceCatalogController::class, 'itemPriceHistory'])->name('libraries.items.price-history');
+        Route::post('libraries/items/quick', [ResourceCatalogController::class, 'storeItemForDupa'])->name('libraries.items.quick');
 
         Route::post('libraries/categories/sync', [ResourceCatalogController::class, 'syncCategories'])->name('libraries.categories.sync');
 

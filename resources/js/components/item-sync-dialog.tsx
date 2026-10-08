@@ -21,10 +21,14 @@ export type SyncCategory = {
 
 export default function ItemSyncDialog({
     categories,
-    canSyncPrices,
+    canSyncPrices = false,
+    onSynced,
+    compact = false,
 }: {
+    canSyncPrices?: boolean;
     categories: SyncCategory[];
-    canSyncPrices: boolean;
+    onSynced?: (message: string) => void;
+    compact?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
@@ -52,7 +56,9 @@ export default function ItemSyncDialog({
             }}
         >
             <DialogTrigger asChild>
-                <Button variant="outline">Sync items</Button>
+                <Button variant="outline" size={compact ? 'sm' : 'default'}>
+                    Sync items
+                </Button>
             </DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
@@ -69,9 +75,13 @@ export default function ItemSyncDialog({
                         event.preventDefault();
                         form.post('/admin/libraries/items/sync', {
                             preserveScroll: true,
-                            onSuccess: () => {
+                            onSuccess: (page) => {
                                 setOpen(false);
-                                form.setData('sync_prices', false);
+                                onSynced?.(
+                                    typeof page.props.syncMessage === 'string'
+                                        ? page.props.syncMessage
+                                        : 'Items synced successfully.',
+                                );
                             },
                         });
                     }}

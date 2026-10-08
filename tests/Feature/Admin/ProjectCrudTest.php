@@ -443,6 +443,9 @@ class ProjectCrudTest extends TestCase
             'ocm' => 0, 'profit' => 0, 'total_markup_percentage' => 0, 'total_markup_value' => 0,
             'vat_five_percent' => 0, 'total_indirect_cost' => 0, 'total_cost' => 0, 'unit_cost_adjusted' => 0,
         ]);
+        DB::table('categories')->insert([
+            'IDCATEGORY' => 1, 'CATEGORY_DESCRIPTION' => 'Carpentry materials', 'fccode' => null, 'is_active' => true,
+        ]);
         $item = Item::query()->create([
             'itemcode' => 'LUMBER-1', 'category_id' => 1,
             'description' => 'Coco lumber', 'unit' => 'bd.ft.',
@@ -450,6 +453,16 @@ class ProjectCrudTest extends TestCase
         DB::table('prices')->insert([
             'itemcode' => $item->itemcode, 'price' => 85.25,
             'effective_from' => '2022-07-15', 'effective_to' => '2022-12-31',
+        ]);
+        DB::table('items')->insert([
+            ['itemcode' => 'STEEL-1', 'category_id' => 1, 'description' => 'Steel rods', 'unit' => 'piece'],
+            ['itemcode' => 'TILE-1', 'category_id' => 1, 'description' => 'Tiles', 'unit' => 'piece'],
+        ]);
+        DB::table('prices')->insert([
+            ['itemcode' => 'STEEL-1', 'price' => 44, 'effective_from' => '2020-01-01', 'effective_to' => null],
+            ['itemcode' => 'STEEL-1', 'price' => 100, 'effective_from' => '2999-01-01', 'effective_to' => null],
+            ['itemcode' => 'TILE-1', 'price' => 60, 'effective_from' => '2020-01-01', 'effective_to' => '2020-12-31'],
+            ['itemcode' => 'TILE-1', 'price' => 80, 'effective_from' => '2999-01-01', 'effective_to' => null],
         ]);
         app(DupaEstimateService::class)->initialize($dupa);
 
@@ -468,11 +481,21 @@ class ProjectCrudTest extends TestCase
             'designation' => 'Coco lumber', 'unit' => 'bd.ft.',
             'qty' => 2, 'unit_cost' => 85.25, 'group' => 'A. CARPENTRY WORKS',
         ]);
+        DB::enableQueryLog();
+        DB::flushQueryLog();
         $this->actingAs($admin)->get(route('admin.dupas.edit', $dupa))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('itemGroups', ['A. CARPENTRY WORKS'])
-                ->where('catalogs.items.0.price', 85.25));
+                ->where('canSyncItems', true)
+                ->where('syncCategories.0.IDCATEGORY', 1)
+                ->where('syncCategories.0.CATEGORY_DESCRIPTION', 'Carpentry materials')
+                ->where('catalogs.items.0.price', 85.25)
+                ->where('catalogs.items.1.price', 44)
+                ->where('catalogs.items.2.price', 80));
+        $priceQueries = array_filter(DB::getQueryLog(), fn (array $query): bool => str_contains($query['query'], 'prices'));
+        $this->assertCount(1, $priceQueries);
+        DB::disableQueryLog();
     }
 
     private function project(): Project

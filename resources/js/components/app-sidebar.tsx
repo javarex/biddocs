@@ -2,7 +2,11 @@ import { Link } from '@inertiajs/react';
 import { usePage } from '@inertiajs/react';
 import {
     LayoutGrid,
-    BookOpen,
+    Tags,
+    Package,
+    HardHat,
+    Truck,
+    Signature,
     Settings,
     Shield,
     Users,
@@ -60,15 +64,15 @@ export function AppSidebar() {
             : null,
     ]);
     const procurementItems = visibleNavItems([
-        can('imports.view')
-            ? { title: 'Excel Imports', href: '/admin/imports', icon: Upload }
-            : null,
         can('projects.view')
             ? {
                   title: 'Projects',
                   href: '/admin/projects',
                   icon: FolderKanban,
               }
+            : null,
+        can('imports.view')
+            ? { title: 'Excel Imports', href: '/admin/imports', icon: Upload }
             : null,
     ]);
 
@@ -87,7 +91,10 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={mainNavItems} label="Workspace" />
+                <NavMain items={mainNavItems} label="Overview" />
+                {procurementItems.length > 0 && (
+                    <NavMain items={procurementItems} label="Procurement" />
+                )}
                 {can('libraries.view') && (
                     <NavMain
                         label="Libraries"
@@ -95,27 +102,27 @@ export function AppSidebar() {
                             {
                                 title: 'Categories',
                                 href: '/admin/libraries/categories',
-                                icon: BookOpen,
-                            },
-                            {
-                                title: 'Labor',
-                                href: '/admin/libraries/labors',
-                                icon: Users,
-                            },
-                            {
-                                title: 'Equipment',
-                                href: '/admin/libraries/equipments',
-                                icon: Settings,
+                                icon: Tags,
                             },
                             {
                                 title: 'Items',
                                 href: '/admin/libraries/items',
-                                icon: BookOpen,
+                                icon: Package,
+                            },
+                            {
+                                title: 'Labor',
+                                href: '/admin/libraries/labors',
+                                icon: HardHat,
+                            },
+                            {
+                                title: 'Equipment',
+                                href: '/admin/libraries/equipments',
+                                icon: Truck,
                             },
                             {
                                 title: 'Signatories',
                                 href: '/admin/libraries/signatories',
-                                icon: Users,
+                                icon: Signature,
                             },
                         ]}
                     />
@@ -125,9 +132,6 @@ export function AppSidebar() {
                         items={administrationItems}
                         label="Administration"
                     />
-                )}
-                {procurementItems.length > 0 && (
-                    <NavMain items={procurementItems} label="Procurement" />
                 )}
             </SidebarContent>
 

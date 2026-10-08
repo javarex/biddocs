@@ -110,7 +110,7 @@ class ResourceCatalogController extends Controller
                 ? User::query()->orderBy('name')->orderBy('username')
                     ->get(['id', 'name', 'username', 'is_active']) : [],
             'can' => [
-                'create' => $catalog === 'items' ? Gate::allows('create', Item::class)
+                'create' => $catalog === 'items' ? false
                     : ($catalog !== 'prices' && Gate::allows('libraries.create')),
                 'update' => $catalog === 'items' ? Gate::allows('updateAny', Item::class)
                     : ($catalog !== 'prices' && Gate::allows('libraries.update')),
@@ -130,11 +130,8 @@ class ResourceCatalogController extends Controller
     public function store(Request $request, string $catalog): RedirectResponse|JsonResponse
     {
         abort_if($catalog === 'prices', 404);
-        if ($catalog === 'items') {
-            Gate::authorize('create', Item::class);
-        } else {
-            Gate::authorize('libraries.create');
-        }
+        abort_if($catalog === 'items', 403, 'Items can only be created through synchronization.');
+        Gate::authorize('libraries.create');
         $definition = $this->definition($catalog);
         $data = $this->validated($request, $catalog);
         if ($request->expectsJson() && ! in_array($catalog, ['labors', 'equipments'], true)) {
@@ -144,11 +141,6 @@ class ResourceCatalogController extends Controller
             $this->saveSignatory($data);
 
             return back()->with('success', 'Signatory created successfully.');
-        }
-        if ($catalog === 'items') {
-            $this->saveItem($data);
-
-            return back()->with('success', 'Record created successfully.');
         }
         if (in_array($catalog, ['labors', 'categories'], true)) {
             $data['created_at'] = $data['updated_at'] = now();
@@ -166,6 +158,11 @@ class ResourceCatalogController extends Controller
         DB::table($catalog)->insert($data);
 
         return back()->with('success', 'Record created successfully.');
+    }
+
+    public function storeItemForDupa(Request $request): JsonResponse
+    {
+        abort(403, 'Items can only be created through synchronization.');
     }
 
     public function update(Request $request, string $catalog, string $record): RedirectResponse
