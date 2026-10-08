@@ -4,11 +4,12 @@ import {
     CircleCheck,
     Copy,
     GripVertical,
+    LoaderCircle,
     Plus,
     ReceiptText,
     Trash2,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ConfirmDialog from '@/components/confirm-dialog';
 import PageHeader from '@/components/page-header';
 import ProjectForm from '@/components/project-form';
@@ -803,6 +804,9 @@ function InlineDupaRow({
     siblings: number[];
 }) {
     const [estimateOpen, setEstimateOpen] = useState(false);
+    const [estimateLoading, setEstimateLoading] = useState(true);
+    const estimateFrame = useRef<HTMLIFrameElement>(null);
+    const estimateChanged = useRef(false);
     const [duplicateOpen, setDuplicateOpen] = useState(false);
     const [duplicating, setDuplicating] = useState(false);
     const details = useForm({
@@ -816,6 +820,26 @@ function InlineDupaRow({
     const selectedSection = sections.find(
         (section) => Number(section.id) === Number(details.data.section_id),
     );
+    useEffect(() => {
+        if (!estimateOpen) {
+            return;
+        }
+
+        const saved = (event: MessageEvent) => {
+            if (
+                event.origin === window.location.origin &&
+                event.source === estimateFrame.current?.contentWindow &&
+                event.data?.type === 'biddocs:dupa-saved' &&
+                event.data.dupaId === item.id
+            ) {
+                estimateChanged.current = true;
+            }
+        };
+
+        window.addEventListener('message', saved);
+
+        return () => window.removeEventListener('message', saved);
+    }, [estimateOpen, item.id]);
     const duplicate = (stayOnStructure: boolean) => {
         setDuplicating(true);
         router.post(
@@ -965,7 +989,10 @@ function InlineDupaRow({
                     size="sm"
                     variant="outline"
                     className="!h-7 px-2 text-xs"
-                    onClick={() => setEstimateOpen(true)}
+                    onClick={() => {
+                        setEstimateLoading(true);
+                        setEstimateOpen(true);
+                    }}
                 >
                     <ReceiptText /> Estimate
                 </Button>
@@ -1038,7 +1065,8 @@ function InlineDupaRow({
                 onOpenChange={(open) => {
                     setEstimateOpen(open);
 
-                    if (!open) {
+                    if (!open && estimateChanged.current) {
+                        estimateChanged.current = false;
                         router.reload();
                     }
                 }}
@@ -1058,14 +1086,33 @@ function InlineDupaRow({
                             Detailed Unit Price Analysis — {item.pay_item_no}
                         </DialogTitle>
                         <DialogDescription className="text-xs">
-                            DUPA details and ADD/NON-ADD resource estimates.
+                            Edit rows like a worksheet. Tab across cells; Enter
+                            moves to the next row.
                         </DialogDescription>
                     </DialogHeader>
-                    <iframe
-                        className="min-h-0 w-full flex-1 border-0 bg-background"
-                        src={`/admin/dupas/${item.id}/edit?embedded=1`}
-                        title={`Estimate for ${item.pay_item_no}`}
-                    />
+                    <div className="relative min-h-0 flex-1">
+                        {estimateLoading && (
+                            <div
+                                className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-muted-foreground"
+                                role="status"
+                            >
+                                <LoaderCircle className="size-4 animate-spin" />
+                                Loading estimate…
+                            </div>
+                        )}
+                        <iframe
+                            ref={estimateFrame}
+                            className="absolute inset-0 size-full border-0 bg-background"
+                            src={`/admin/dupas/${item.id}/edit?embedded=1`}
+                            title={`Estimate for ${item.pay_item_no}`}
+                            onLoad={() => setEstimateLoading(false)}
+                            style={{
+                                visibility: estimateLoading
+                                    ? 'hidden'
+                                    : 'visible',
+                            }}
+                        />
+                    </div>
                 </DialogContent>
             </Dialog>
         </form>

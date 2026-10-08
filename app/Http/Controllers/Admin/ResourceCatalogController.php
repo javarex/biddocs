@@ -143,6 +143,32 @@ class ResourceCatalogController extends Controller
         return back()->with('success', 'Record created successfully.');
     }
 
+    public function storeItemForDupa(Request $request): JsonResponse
+    {
+        Gate::authorize('libraries.create');
+        $item = $this->validated($request, 'items');
+        $details = $request->validate([
+            'category_id' => [Rule::exists('categories', 'IDCATEGORY')],
+            'price' => ['required', 'numeric', 'min:0', 'max:9999999999999.99', 'decimal:0,2'],
+        ]);
+
+        $id = DB::transaction(function () use ($item, $details): int {
+            $id = DB::table('items')->insertGetId($item);
+            DB::table('prices')->insert([
+                'itemcode' => $item['itemcode'],
+                'price' => $details['price'],
+                'effective_from' => now()->toDateString(),
+                'effective_to' => null,
+            ]);
+
+            return $id;
+        });
+
+        return response()->json([
+            'record' => ['id' => $id, ...$item, 'price' => (float) $details['price']],
+        ], 201);
+    }
+
     public function update(Request $request, string $catalog, string $record): RedirectResponse
     {
         Gate::authorize('libraries.update');

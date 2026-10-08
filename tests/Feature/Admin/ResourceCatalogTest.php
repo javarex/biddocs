@@ -78,10 +78,38 @@ it('quick creates labor and equipment as json for the dupa editor', function () 
     $this->assertDatabaseHas('equipments', ['equipment' => 'Quick Mixer', 'rental' => 1500]);
 });
 
+it('quick creates a priced item for the dupa editor', function () {
+    DB::table('categories')->insert([
+        'IDCATEGORY' => 7, 'CATEGORY_DESCRIPTION' => 'Materials', 'is_active' => true,
+    ]);
+    $data = [
+        'itemcode' => 'M-7', 'category_id' => 7, 'description' => 'Quick Cement',
+        'unit' => 'bag', 'price' => 125.50,
+    ];
+
+    $this->postJson('/admin/libraries/items/quick', $data)
+        ->assertCreated()
+        ->assertJsonPath('record.itemcode', 'M-7')
+        ->assertJsonPath('record.price', 125.50);
+    $this->assertDatabaseHas('items', ['itemcode' => 'M-7', 'category_id' => 7]);
+    $this->assertDatabaseHas('prices', [
+        'itemcode' => 'M-7', 'price' => 125.50, 'effective_from' => now()->toDateString(),
+    ]);
+
+    $this->postJson('/admin/libraries/items/quick', [...$data, 'itemcode' => 'M-8', 'price' => -1])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('price');
+    $this->postJson('/admin/libraries/items/quick', [...$data, 'itemcode' => 'M-8', 'category_id' => 999])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('category_id');
+    $this->assertDatabaseMissing('items', ['itemcode' => 'M-8']);
+});
+
 it('denies catalog access without permissions', function () {
     $this->actingAs(User::factory()->create(['is_super_admin' => false, 'is_active' => true]));
     $this->get('/admin/libraries/labors')->assertForbidden();
     $this->post('/admin/libraries/labors', [])->assertForbidden();
+    $this->postJson('/admin/libraries/items/quick', [])->assertForbidden();
     $this->put('/admin/libraries/labors/1', [])->assertForbidden();
     $this->delete('/admin/libraries/labors/1')->assertForbidden();
 });

@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import ItemSyncDialog from '@/components/item-sync-dialog';
+import type { SyncCategory } from '@/components/item-sync-dialog';
 import PageHeader from '@/components/page-header';
 import { Button } from '@/components/ui/button';
 import {
@@ -97,6 +99,8 @@ type Props = {
     embedded?: boolean;
     csrf_token: string;
     canCreateResources: boolean;
+    canSyncItems: boolean;
+    syncCategories: SyncCategory[];
     project: {
         id: number;
         project_code: string | null;
@@ -132,6 +136,10 @@ const money = new Intl.NumberFormat('en-PH', {
     style: 'currency',
     currency: 'PHP',
 });
+const laborGrid =
+    'grid-cols-[2rem_minmax(12rem,2fr)_minmax(5rem,0.7fr)_minmax(5rem,0.7fr)_minmax(6rem,0.8fr)_minmax(7rem,0.9fr)_4rem_2rem]';
+const itemGrid =
+    'grid-cols-[2rem_minmax(13rem,2fr)_minmax(4rem,0.5fr)_minmax(6rem,0.7fr)_minmax(6rem,0.7fr)_minmax(8rem,1fr)_minmax(7rem,0.8fr)_4rem_2rem]';
 const supersededItemNotice =
     /^\s*\((?:do not use this code anymore|please use item code\b[^)]*)\)/i;
 
@@ -139,6 +147,8 @@ export default function DupaEdit({
     embedded = false,
     csrf_token,
     canCreateResources,
+    canSyncItems,
+    syncCategories,
     project,
     dupa,
     sections,
@@ -162,6 +172,20 @@ export default function DupaEdit({
     const [equipmentCatalog, setEquipmentCatalog] = useState(
         catalogs.equipment,
     );
+    const [createdItems, setCreatedItems] = useState<ItemCatalog[]>([]);
+    const itemCatalog = useMemo(() => {
+        if (!createdItems.length) {
+            return catalogs.items;
+        }
+
+        return [
+            ...catalogs.items,
+            ...createdItems.filter(
+                (created) =>
+                    !catalogs.items.some((item) => item.id === created.id),
+            ),
+        ].sort((a, b) => a.description.localeCompare(b.description));
+    }, [catalogs.items, createdItems]);
     const [dirty, setDirty] = useState<Record<Side, boolean>>({
         ADD: false,
         NON_ADD: false,
@@ -191,8 +215,16 @@ export default function DupaEdit({
         Record<string, string>
     >({});
     const estimate = estimates[side];
+    const notifyParentOfSave = () => {
+        if (embedded && window.parent !== window) {
+            window.parent.postMessage(
+                { type: 'biddocs:dupa-saved', dupaId: dupa.id },
+                window.location.origin,
+            );
+        }
+    };
     const itemDraft = itemDrafts[side];
-    const selectedItem = catalogs.items.find(
+    const selectedItem = itemCatalog.find(
         (item) => item.id === Number(itemDraft.item_id),
     );
     const groupOptions = useMemo(
@@ -293,6 +325,7 @@ export default function DupaEdit({
                 setSaving(false);
             },
             onSuccess: () => {
+                notifyParentOfSave();
                 setDirty((current) => ({ ...current, [side]: false }));
                 setSaving(false);
 
@@ -305,6 +338,39 @@ export default function DupaEdit({
     };
 
     const changeSide = (next: Side) => setSide(next);
+
+    const moveBetweenCells = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (
+            event.key !== 'Enter' ||
+            event.ctrlKey ||
+            event.altKey ||
+            event.metaKey
+        ) {
+            return;
+        }
+
+        const cell = event.target;
+
+        if (!(cell instanceof HTMLInputElement) || !cell.dataset.sheetColumn) {
+            return;
+        }
+
+        const section = cell.closest('[data-sheet-section]');
+        const row = cell.closest('[data-sheet-row]');
+
+        if (!section || !row) {
+            return;
+        }
+
+        event.preventDefault();
+        const rows = Array.from(section.querySelectorAll('[data-sheet-row]'));
+        const next = rows[rows.indexOf(row) + (event.shiftKey ? -1 : 1)];
+        const nextCell = next?.querySelector<HTMLInputElement>(
+            `[data-sheet-column="${cell.dataset.sheetColumn}"]`,
+        );
+        nextCell?.focus();
+        nextCell?.select();
+    };
 
     const copyAddToNonAdd = () => {
         if (
@@ -325,9 +391,10 @@ export default function DupaEdit({
         <>
             <Head title={`${dupa.pay_item_no} estimate`} />
             <div
+                onKeyDown={moveBetweenCells}
                 className={
                     embedded
-                        ? 'space-y-2 p-2 text-sm [&_[data-slot=card-content]]:px-3 [&_[data-slot=card-header]]:px-3 [&_[data-slot=card]]:gap-2 [&_[data-slot=card]]:py-2 [&_[data-slot=input]]:h-7 [&_button]:h-7 [&_select]:h-7'
+                        ? 'space-y-2 bg-background p-2 text-sm [&_[data-slot=card-content]]:px-2 [&_[data-slot=card-header]]:px-2 [&_[data-slot=card]]:gap-1 [&_[data-slot=card]]:py-2 [&_[data-slot=input]]:h-7 [&_button]:h-7 [&_select]:h-7'
                         : 'space-y-4 p-3 md:p-4 [&_[data-slot=card-content]]:px-4 [&_[data-slot=card-header]]:px-4 [&_[data-slot=card]]:gap-4 [&_[data-slot=card]]:py-4 [&_[data-slot=input]]:h-8 [&_button]:h-8 [&_select]:h-8'
                 }
             >
@@ -364,6 +431,7 @@ export default function DupaEdit({
                                 e.preventDefault();
                                 details.put(`/admin/dupas/${dupa.id}`, {
                                     preserveScroll: true,
+                                    onSuccess: notifyParentOfSave,
                                 });
                             }}
                         >
@@ -473,7 +541,7 @@ export default function DupaEdit({
                     </CardContent>
                 </Card>
 
-                <div className="flex flex-wrap items-center gap-1">
+                <div className="sticky top-0 z-20 flex flex-wrap items-center gap-1 border-b bg-background/95 py-1 backdrop-blur">
                     {(['ADD', 'NON_ADD'] as Side[]).map((value) => (
                         <Button
                             key={value}
@@ -484,8 +552,13 @@ export default function DupaEdit({
                             {dirty[value] ? ' •' : ''}
                         </Button>
                     ))}
+                    <span className="ml-auto hidden text-xs text-muted-foreground lg:inline">
+                        Tab across cells · Enter down · Shift+Enter up
+                    </span>
+                    <span className="px-2 text-xs font-semibold tabular-nums">
+                        Direct {money.format(computed.direct)}
+                    </span>
                     <Button
-                        className="sm:ml-auto"
                         type="button"
                         variant="outline"
                         onClick={copyAddToNonAdd}
@@ -548,7 +621,10 @@ export default function DupaEdit({
                             />
                         </div>
 
-                        <div className="space-y-2 rounded-md border bg-muted/20 p-2">
+                        <div
+                            data-sheet-section="labor"
+                            className="space-y-1 overflow-x-auto rounded-md border bg-card p-2"
+                        >
                             <div>
                                 <h3 className="font-semibold">Labors</h3>
                                 <p className="text-xs text-muted-foreground">
@@ -557,8 +633,8 @@ export default function DupaEdit({
                             </div>
                             {estimate.labors.length > 0 && (
                                 <ResourceColumns
-                                    columns="Labor,No. of Persons,No. of Days,Rate,Include"
-                                    className="md:grid-cols-[1.5fr_0.7fr_0.7fr_0.8fr_0.5fr_auto]"
+                                    columns="#,Labor,Persons,Days,Rate,Amount,Include"
+                                    className={`${laborGrid} min-w-[54rem]`}
                                 />
                             )}
                             {estimate.labors.length === 0 && (
@@ -568,9 +644,13 @@ export default function DupaEdit({
                             )}
                             {estimate.labors.map((row, index) => (
                                 <div
-                                    className="grid gap-2 md:grid-cols-[1.5fr_0.7fr_0.7fr_0.8fr_0.5fr_auto]"
+                                    data-sheet-row
+                                    className={`grid min-w-[54rem] items-center gap-1 border-b py-1 last:border-b-0 hover:bg-muted/30 ${laborGrid}`}
                                     key={index}
                                 >
+                                    <span className="text-center text-xs text-muted-foreground tabular-nums">
+                                        {index + 1}
+                                    </span>
                                     <div className="flex min-w-0">
                                         <select
                                             aria-label={`Labor row ${index + 1}`}
@@ -643,6 +723,7 @@ export default function DupaEdit({
                                         )}
                                     </div>
                                     <Input
+                                        data-sheet-column="persons"
                                         aria-label={`Number of persons for labor row ${index + 1}`}
                                         type="number"
                                         min="0"
@@ -657,6 +738,7 @@ export default function DupaEdit({
                                         }
                                     />
                                     <Input
+                                        data-sheet-column="days"
                                         aria-label={`Number of days for labor row ${index + 1}`}
                                         type="number"
                                         min="0"
@@ -671,6 +753,7 @@ export default function DupaEdit({
                                         }
                                     />
                                     <Input
+                                        data-sheet-column="rate"
                                         aria-label={`Rate for labor row ${index + 1}`}
                                         type="number"
                                         min="0"
@@ -684,8 +767,19 @@ export default function DupaEdit({
                                             })
                                         }
                                     />
+                                    <output
+                                        className="pr-1 text-right text-xs font-medium tabular-nums"
+                                        aria-label={`Labor row ${index + 1} amount`}
+                                    >
+                                        {money.format(
+                                            number(row.no_of_person) *
+                                                number(row.no_of_days) *
+                                                number(row.rate),
+                                        )}
+                                    </output>
                                     <Include
                                         checked={row.is_included}
+                                        compact={embedded}
                                         onChange={(checked) =>
                                             updateLabor(index, {
                                                 ...row,
@@ -794,19 +888,27 @@ export default function DupaEdit({
                                 ) : undefined
                             }
                         />
-                        <div className="space-y-1">
+                        <div
+                            data-sheet-section="equipment"
+                            className="space-y-1 overflow-x-auto rounded-md border bg-card p-2"
+                        >
                             {estimate.equipment.length > 0 && (
                                 <ResourceColumns
-                                    columns="Resource,Units,Days,Rental,Include"
-                                    className="md:grid-cols-[1.5fr_0.7fr_0.7fr_0.8fr_0.5fr_auto]"
+                                    columns="#,Resource,Units,Days,Rental,Amount,Include"
+                                    className={`${laborGrid} min-w-[54rem]`}
                                 />
                             )}
                             {estimate.equipment.map((row, index) => (
                                 <div
-                                    className="grid gap-2 md:grid-cols-[1.5fr_0.7fr_0.7fr_0.8fr_0.5fr_auto]"
+                                    data-sheet-row
+                                    className={`grid min-w-[54rem] items-center gap-1 border-b py-1 last:border-b-0 hover:bg-muted/30 ${laborGrid}`}
                                     key={index}
                                 >
+                                    <span className="text-center text-xs text-muted-foreground tabular-nums">
+                                        {index + 1}
+                                    </span>
                                     <select
+                                        aria-label={`Equipment row ${index + 1}`}
                                         className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
                                         value={row.equipment_id}
                                         onChange={(e) => {
@@ -835,6 +937,8 @@ export default function DupaEdit({
                                         ))}
                                     </select>
                                     <Input
+                                        data-sheet-column="units"
+                                        aria-label={`Units for equipment row ${index + 1}`}
                                         type="number"
                                         min="0"
                                         step="0.0001"
@@ -848,6 +952,8 @@ export default function DupaEdit({
                                         }
                                     />
                                     <Input
+                                        data-sheet-column="days"
+                                        aria-label={`Days for equipment row ${index + 1}`}
                                         type="number"
                                         min="0"
                                         step="0.0001"
@@ -861,6 +967,8 @@ export default function DupaEdit({
                                         }
                                     />
                                     <Input
+                                        data-sheet-column="rental"
+                                        aria-label={`Rental for equipment row ${index + 1}`}
                                         type="number"
                                         min="0"
                                         step="0.01"
@@ -874,8 +982,19 @@ export default function DupaEdit({
                                             })
                                         }
                                     />
+                                    <output
+                                        className="pr-1 text-right text-xs font-medium tabular-nums"
+                                        aria-label={`Equipment row ${index + 1} amount`}
+                                    >
+                                        {money.format(
+                                            number(row.no_of_units) *
+                                                number(row.no_of_days) *
+                                                number(row.rental_unit_cost),
+                                        )}
+                                    </output>
                                     <Include
                                         checked={row.is_included}
+                                        compact={embedded}
                                         onChange={(checked) =>
                                             updateEquipment(index, {
                                                 ...row,
@@ -902,24 +1021,54 @@ export default function DupaEdit({
                             <div className="flex items-center justify-between gap-2">
                                 <h3 className="font-semibold">Items</h3>
                                 <span className="text-xs text-muted-foreground">
-                                    {catalogs.items.length} catalog item(s)
+                                    {itemCatalog.length} catalog item(s)
                                 </span>
                             </div>
                             <div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_minmax(5rem,0.45fr)_minmax(7rem,0.65fr)_minmax(6rem,0.5fr)_minmax(8rem,0.8fr)_auto]">
-                                <ItemPicker
-                                    key={side}
-                                    items={catalogs.items}
-                                    value={itemDraft.item_search}
-                                    onChange={(item, search) =>
-                                        setItemDraft({
-                                            ...itemDraft,
-                                            item_id: item
-                                                ? String(item.id)
-                                                : '',
-                                            item_search: search,
-                                        })
-                                    }
-                                />
+                                <div className="flex min-w-0 gap-2">
+                                    <div className="min-w-0 flex-1">
+                                        <ItemPicker
+                                            key={side}
+                                            items={itemCatalog}
+                                            value={itemDraft.item_search}
+                                            onChange={(item, search) =>
+                                                setItemDraft({
+                                                    ...itemDraft,
+                                                    item_id: item
+                                                        ? String(item.id)
+                                                        : '',
+                                                    item_search: search,
+                                                })
+                                            }
+                                        />
+                                    </div>
+                                    {canCreateResources && (
+                                        <QuickItemCreate
+                                            csrfToken={csrf_token}
+                                            categories={syncCategories}
+                                            onCreated={(item) => {
+                                                setCreatedItems((current) => [
+                                                    ...current,
+                                                    item,
+                                                ]);
+                                                setItemDraft({
+                                                    ...itemDraft,
+                                                    item_id: String(item.id),
+                                                    item_search: `${item.itemcode} · ${item.description}`,
+                                                });
+                                            }}
+                                        />
+                                    )}
+                                    {canSyncItems && (
+                                        <ItemSyncDialog
+                                            categories={syncCategories}
+                                            compact
+                                            onSynced={(message) =>
+                                                toast.success(message)
+                                            }
+                                        />
+                                    )}
+                                </div>
                                 <Input
                                     aria-label="Selected item unit"
                                     title="Unit"
@@ -977,7 +1126,7 @@ export default function DupaEdit({
                                         number(itemDraft.qty) < 0
                                     }
                                     onClick={() => {
-                                        const item = catalogs.items.find(
+                                        const item = itemCatalog.find(
                                             (entry) =>
                                                 entry.id ===
                                                 Number(itemDraft.item_id),
@@ -1027,22 +1176,31 @@ export default function DupaEdit({
                                 next item.
                             </p>
                         </div>
-                        <div className="space-y-2">
+                        <div
+                            data-sheet-section="items"
+                            className="space-y-1 overflow-x-auto rounded-md border bg-card p-2"
+                        >
                             {estimate.items.length > 0 && (
                                 <ResourceColumns
-                                    columns="Item,Unit,Unit cost,Quantity,Group,Include"
-                                    className="md:grid-cols-[1.8fr_0.6fr_0.7fr_0.8fr_1fr_0.4fr_auto]"
+                                    columns="#,Item,Unit,Unit cost,Quantity,Group,Amount,Include"
+                                    className={`${itemGrid} min-w-[62rem]`}
                                 />
                             )}
                             {estimate.items.map((row, index) => (
                                 <div
-                                    className="space-y-2 rounded-md border p-2"
+                                    data-sheet-row
+                                    className="border-b py-1 last:border-b-0 hover:bg-muted/30"
                                     key={index}
                                 >
-                                    <div className="grid gap-2 md:grid-cols-[1.8fr_0.6fr_0.7fr_0.8fr_1fr_0.4fr_auto]">
+                                    <div
+                                        className={`grid min-w-[62rem] items-center gap-1 ${itemGrid}`}
+                                    >
+                                        <span className="text-center text-xs text-muted-foreground tabular-nums">
+                                            {index + 1}
+                                        </span>
                                         <div className="flex min-h-8 items-center text-sm">
                                             {
-                                                catalogs.items.find(
+                                                itemCatalog.find(
                                                     (item) =>
                                                         item.id === row.item_id,
                                                 )?.itemcode
@@ -1058,6 +1216,8 @@ export default function DupaEdit({
                                             )}
                                         </div>
                                         <Input
+                                            data-sheet-column="quantity"
+                                            aria-label={`Quantity for item row ${index + 1}`}
                                             type="number"
                                             min="0"
                                             step="0.0001"
@@ -1071,6 +1231,8 @@ export default function DupaEdit({
                                             }
                                         />
                                         <Input
+                                            data-sheet-column="group"
+                                            aria-label={`Group for item row ${index + 1}`}
                                             list="project-item-groups"
                                             maxLength={255}
                                             placeholder="Group (optional)"
@@ -1087,8 +1249,18 @@ export default function DupaEdit({
                                                 });
                                             }}
                                         />
+                                        <output
+                                            className="pr-1 text-right text-xs font-medium tabular-nums"
+                                            aria-label={`Item row ${index + 1} amount`}
+                                        >
+                                            {money.format(
+                                                number(row.qty) *
+                                                    number(row.unit_cost),
+                                            )}
+                                        </output>
                                         <Include
                                             checked={row.is_included}
+                                            compact={embedded}
                                             onChange={(checked) =>
                                                 updateItem(index, {
                                                     ...row,
@@ -1575,6 +1747,192 @@ function QuickEquipmentCreate({
     );
 }
 
+function QuickItemCreate({
+    csrfToken,
+    categories,
+    onCreated,
+}: {
+    csrfToken: string;
+    categories: SyncCategory[];
+    onCreated: (item: ItemCatalog) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const [itemcode, setItemcode] = useState('');
+    const [categoryId, setCategoryId] = useState('');
+    const [description, setDescription] = useState('');
+    const [unit, setUnit] = useState('');
+    const [price, setPrice] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+
+    const submit = async (event: React.FormEvent) => {
+        event.preventDefault();
+        setSaving(true);
+        setError('');
+
+        try {
+            const item = await createCatalogRecord<ItemCatalog>(
+                '/admin/libraries/items/quick',
+                {
+                    itemcode: itemcode.trim(),
+                    category_id: Number(categoryId),
+                    description: description.trim(),
+                    unit: unit.trim(),
+                    price: Number(price),
+                },
+                csrfToken,
+            );
+            onCreated(item);
+            setItemcode('');
+            setCategoryId('');
+            setDescription('');
+            setUnit('');
+            setPrice('');
+            setOpen(false);
+            toast.success(`${item.description} was saved and selected.`);
+        } catch (reason) {
+            setError(
+                reason instanceof Error
+                    ? reason.message
+                    : 'The item could not be created.',
+            );
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Dialog
+            open={open}
+            onOpenChange={(nextOpen) => {
+                if (!saving) {
+                    setOpen(nextOpen);
+                    setError('');
+                }
+            }}
+        >
+            <DialogTrigger asChild>
+                <Button type="button" variant="outline" size="sm">
+                    <Plus /> New
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>New item library record</DialogTitle>
+                    <DialogDescription>
+                        Save an item with its starting price, then select it for
+                        this estimate. The price takes effect today.
+                    </DialogDescription>
+                </DialogHeader>
+                <form className="space-y-4" onSubmit={submit}>
+                    <div className="space-y-2">
+                        <Label htmlFor="quick-item-code">Item code</Label>
+                        <Input
+                            id="quick-item-code"
+                            required
+                            autoFocus
+                            maxLength={255}
+                            value={itemcode}
+                            onChange={(event) =>
+                                setItemcode(event.target.value)
+                            }
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="quick-item-category">Category</Label>
+                        <select
+                            id="quick-item-category"
+                            required
+                            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                            value={categoryId}
+                            onChange={(event) =>
+                                setCategoryId(event.target.value)
+                            }
+                        >
+                            <option value="">Select a category</option>
+                            {categories.map((category) => (
+                                <option
+                                    key={category.IDCATEGORY}
+                                    value={category.IDCATEGORY}
+                                >
+                                    {category.CATEGORY_DESCRIPTION}
+                                </option>
+                            ))}
+                        </select>
+                        {!categories.length && (
+                            <p className="text-sm text-muted-foreground">
+                                Sync categories in Libraries → Categories first.
+                            </p>
+                        )}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="quick-item-description">
+                            Description
+                        </Label>
+                        <Input
+                            id="quick-item-description"
+                            required
+                            value={description}
+                            onChange={(event) =>
+                                setDescription(event.target.value)
+                            }
+                        />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                            <Label htmlFor="quick-item-unit">Unit</Label>
+                            <Input
+                                id="quick-item-unit"
+                                required
+                                maxLength={255}
+                                value={unit}
+                                onChange={(event) =>
+                                    setUnit(event.target.value)
+                                }
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="quick-item-price">
+                                Starting price
+                            </Label>
+                            <Input
+                                id="quick-item-price"
+                                required
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={price}
+                                onChange={(event) =>
+                                    setPrice(event.target.value)
+                                }
+                            />
+                        </div>
+                    </div>
+                    {error && (
+                        <p className="text-sm text-destructive">{error}</p>
+                    )}
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={saving}
+                            onClick={() => setOpen(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="submit"
+                            disabled={saving || !categories.length}
+                        >
+                            {saving ? 'Saving…' : 'Save & select'}
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 function ResourcePicker({
     title,
     items,
@@ -1828,7 +2186,7 @@ function ResourceColumns({
 }) {
     return (
         <div
-            className={`hidden gap-2 px-1 text-xs font-medium text-muted-foreground md:grid ${className}`}
+            className={`grid items-center gap-1 border-b bg-muted/60 px-1 py-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase ${className}`}
         >
             {columns.split(',').map((column) => (
                 <span key={column}>{column}</span>
@@ -1840,18 +2198,20 @@ function ResourceColumns({
 function Include({
     checked,
     onChange,
+    compact = false,
 }: {
     checked: boolean;
     onChange: (checked: boolean) => void;
+    compact?: boolean;
 }) {
     return (
-        <label className="flex items-center gap-1 text-xs">
+        <label className="flex items-center justify-center gap-1 text-xs">
             <input
                 type="checkbox"
                 checked={checked}
                 onChange={(e) => onChange(e.target.checked)}
-            />{' '}
-            Include
+            />
+            <span className={compact ? 'sr-only' : ''}>Include</span>
         </label>
     );
 }
