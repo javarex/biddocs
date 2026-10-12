@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 use Inertia\Middleware;
 use Octopy\Impersonate\Impersonate;
 
@@ -36,6 +37,8 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        Inertia::encryptHistory($request->isSecure());
+
         $user = $request->user();
         $impersonating = $request->user() !== null && app(Impersonate::class)->check();
         $permissions = $user === null

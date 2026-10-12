@@ -57,7 +57,7 @@ class ImpersonationTest extends TestCase
             ->post(route('admin.users.impersonate', $target))
             ->assertRedirect(route('dashboard'));
 
-        $response = $this->get(route('admin.imports.index'));
+        $response = $this->get('https://bds.test/admin/imports');
 
         $response->assertOk()->assertInertia(fn (Assert $page) => $page
             ->component('admin/imports/index')
