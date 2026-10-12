@@ -149,11 +149,13 @@ class ProjectEstimateController extends Controller
         Gate::authorize('update', $project);
         $data = $request->validate([
             'settings' => ['required', 'array:ADD,NON_ADD'],
+            'settings.*' => ['required', 'array:pol_amount,pre_engineering_percentage,supervision_percentage,contingencies_amount'],
             'settings.*.pol_amount' => ['required', 'numeric', 'min:0'],
             'settings.*.pre_engineering_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
             'settings.*.supervision_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
             'settings.*.contingencies_amount' => ['required', 'numeric', 'min:0'],
             'miscellaneous' => ['array'],
+            'miscellaneous.*' => ['required', 'array:estimate_type,description,unit,amount,multiplier'],
             'miscellaneous.*.estimate_type' => ['required', Rule::in(['ADD', 'NON_ADD'])],
             'miscellaneous.*.description' => ['required', 'string', 'max:10000'],
             'miscellaneous.*.unit' => ['required', 'string', 'max:45'],

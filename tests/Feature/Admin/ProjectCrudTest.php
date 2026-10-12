@@ -412,6 +412,56 @@ class ProjectCrudTest extends TestCase
         $this->assertSame(0.0, $totals['NON_ADD']['grand_total']);
     }
 
+    public function test_project_charges_form_only_submits_editable_fields(): void
+    {
+        $admin = User::factory()->create(['is_super_admin' => true]);
+        $project = $this->project();
+        app(DupaEstimateService::class)->ensureProjectSettings($project);
+        $project->miscellaneous()->create([
+            'estimate_type' => 'ADD', 'description' => 'Permit', 'unit' => 'l.s.',
+            'amount' => 25, 'multiplier' => 1, 'sort_order' => 0,
+        ]);
+
+        $this->actingAs($admin)->get(route('admin.projects.edit', $project))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('project.estimate_settings.ADD', [
+                    'pol_amount' => 0, 'pre_engineering_percentage' => 0,
+                    'supervision_percentage' => 0, 'contingencies_amount' => 0,
+                ])
+                ->where('project.miscellaneous.0', [
+                    'estimate_type' => 'ADD', 'description' => 'Permit', 'unit' => 'l.s.',
+                    'amount' => 25, 'multiplier' => 1,
+                ]));
+
+        $settings = [
+            'ADD' => ['pol_amount' => 100, 'pre_engineering_percentage' => 1,
+                'supervision_percentage' => 2, 'contingencies_amount' => 50],
+            'NON_ADD' => ['pol_amount' => 0, 'pre_engineering_percentage' => 0,
+                'supervision_percentage' => 0, 'contingencies_amount' => 0],
+        ];
+        $miscellaneous = [[
+            'estimate_type' => 'ADD', 'description' => 'Permit', 'unit' => 'l.s.',
+            'amount' => 30, 'multiplier' => 2,
+        ]];
+
+        $this->actingAs($admin)->put(route('admin.projects.estimate-settings.update', $project), [
+            'settings' => $settings, 'miscellaneous' => $miscellaneous,
+        ])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('project_estimate_settings', [
+            'project_id' => $project->id, 'estimate_type' => 'ADD', 'pol_amount' => 100,
+        ]);
+        $this->assertDatabaseHas('miscellaneous', [
+            'project_id' => $project->id, 'description' => 'Permit', 'amount' => 30,
+        ]);
+
+        $this->actingAs($admin)->put(route('admin.projects.estimate-settings.update', $project), [
+            'settings' => ['ADD' => $settings['ADD'] + ['created_at' => '2026-10-08T01:06:29.000000Z'],
+                'NON_ADD' => $settings['NON_ADD']],
+            'miscellaneous' => $miscellaneous,
+        ])->assertSessionHasErrors('settings.ADD');
+    }
+
     public function test_positive_direct_cost_requires_positive_quantity(): void
     {
         $project = $this->project();

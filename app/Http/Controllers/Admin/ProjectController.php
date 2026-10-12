@@ -169,8 +169,14 @@ class ProjectController extends Controller
                         'items' => $subSection->projectItems->map(fn (ProjectItem $item) => $this->editableItem($item))->values(),
                     ])->values(),
                 ])->values(),
-                'estimate_settings' => $project->estimateSettings->keyBy('estimate_type'),
-                'miscellaneous' => $project->miscellaneous,
+                'estimate_settings' => $project->estimateSettings
+                    ->mapWithKeys(fn ($setting): array => [$setting->estimate_type => $setting->only([
+                        'pol_amount', 'pre_engineering_percentage',
+                        'supervision_percentage', 'contingencies_amount',
+                    ])]),
+                'miscellaneous' => $project->miscellaneous->map(fn ($row): array => $row->only([
+                    'estimate_type', 'description', 'unit', 'amount', 'multiplier',
+                ])),
             ],
             ...$this->signatoryFormData($project),
             'totals' => $this->estimates->projectTotals($project),
