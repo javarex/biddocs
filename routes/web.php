@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\DupaSourceController;
 use App\Http\Controllers\Admin\ImportController;
 use App\Http\Controllers\Admin\ProjectBidDocumentController;
 use App\Http\Controllers\Admin\ProjectController;
@@ -23,6 +24,9 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
 
     Route::prefix('admin')->name('admin.')->group(function () {
+        Route::get('dpwh-dupa', [DupaSourceController::class, 'index'])->name('dpwh-dupa.index');
+        Route::post('dpwh-dupa/import', [DupaSourceController::class, 'import'])->name('dpwh-dupa.import');
+
         Route::post('libraries/items/sync', [ResourceCatalogController::class, 'syncItems'])->name('libraries.items.sync');
         Route::get('libraries/items/{record}/price-history', [ResourceCatalogController::class, 'itemPriceHistory'])->name('libraries.items.price-history');
         Route::post('libraries/items/quick', [ResourceCatalogController::class, 'storeItemForDupa'])->name('libraries.items.quick');
