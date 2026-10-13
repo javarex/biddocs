@@ -2,6 +2,7 @@ import { Link } from '@inertiajs/react';
 import { usePage } from '@inertiajs/react';
 import {
     LayoutGrid,
+    FileSpreadsheet,
     Tags,
     Package,
     HardHat,
@@ -99,6 +100,11 @@ export function AppSidebar() {
                     <NavMain
                         label="Libraries"
                         items={[
+                            {
+                                title: 'DPWH DUPA',
+                                href: '/admin/dpwh-dupa',
+                                icon: FileSpreadsheet,
+                            },
                             {
                                 title: 'Categories',
                                 href: '/admin/libraries/categories',
