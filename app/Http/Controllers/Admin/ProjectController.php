@@ -87,8 +87,8 @@ class ProjectController extends Controller
             'contingencies_amount' => $project->contingencies ?? 0,
         ]);
 
-        return to_route('admin.projects.edit', ['project' => $project, 'step' => 'structure'])
-            ->with('success', 'Project created. Add its sections and DUPA items next.');
+        return to_route('admin.projects.edit', ['project' => $project])
+            ->with('success', 'Project created. Open DUPA to add its sections and items.');
     }
 
     public function show(Project $project): Response
@@ -118,6 +118,17 @@ class ProjectController extends Controller
 
         return Inertia::render($component, [
             'can_view_dupa' => Gate::allows('projects.dupa.view'),
+            ...($component === 'admin/projects/dupa' && Gate::allows('update', $project) ? [
+                'dupaSections' => $project->sections->map(fn (Section $section): array => [
+                    'id' => $section->id, 'section' => $section->section, 'sort_order' => $section->sort_order,
+                    'items' => $section->projectItems->map(fn (ProjectItem $item) => $this->editableItem($item))->values(),
+                    'sub_sections' => $section->subSections->map(fn (SubSection $subSection): array => [
+                        'id' => $subSection->id, 'sub_section' => $subSection->sub_section, 'sort_order' => $subSection->sort_order,
+                        'items' => $subSection->projectItems->map(fn (ProjectItem $item) => $this->editableItem($item))->values(),
+                    ])->values(),
+                ])->values(),
+                'openEstimateId' => request()->integer('estimate') ?: null,
+            ] : []),
             'project' => [
                 ...$project->only([
                     'id', 'project_code', 'project_name', 'project_description', 'source_of_funds',
@@ -172,18 +183,6 @@ class ProjectController extends Controller
         return Inertia::render('admin/projects/edit', [
             'project' => [
                 ...$project->only($this->fields()),
-                'sections' => $project->sections->map(fn (Section $section): array => [
-                    'id' => $section->id,
-                    'section' => $section->section,
-                    'sort_order' => $section->sort_order,
-                    'items' => $section->projectItems->map(fn (ProjectItem $item) => $this->editableItem($item))->values(),
-                    'sub_sections' => $section->subSections->map(fn (SubSection $subSection): array => [
-                        'id' => $subSection->id,
-                        'sub_section' => $subSection->sub_section,
-                        'sort_order' => $subSection->sort_order,
-                        'items' => $subSection->projectItems->map(fn (ProjectItem $item) => $this->editableItem($item))->values(),
-                    ])->values(),
-                ])->values(),
                 'estimate_settings' => $project->estimateSettings
                     ->mapWithKeys(fn ($setting): array => [$setting->estimate_type => $setting->only([
                         'pol_amount', 'pre_engineering_percentage',
@@ -194,8 +193,9 @@ class ProjectController extends Controller
                 ])),
             ],
             ...$this->signatoryFormData($project),
+            'canViewDupa' => Gate::allows('projects.dupa.view'),
             'totals' => $this->estimates->projectTotals($project),
-            'initialStep' => in_array($request->query('step'), ['details', 'structure', 'charges', 'review'], true)
+            'initialStep' => in_array($request->query('step'), ['details', 'charges', 'review'], true)
                 ? $request->query('step')
                 : 'details',
             'completion' => [

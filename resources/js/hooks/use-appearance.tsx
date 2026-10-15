@@ -68,7 +68,10 @@ const mediaQuery = (): MediaQueryList | null => {
     return window.matchMedia('(prefers-color-scheme: dark)');
 };
 
-const handleSystemThemeChange = (): void => applyTheme(currentAppearance);
+const handleSystemThemeChange = (): void => {
+    applyTheme(currentAppearance);
+    notify();
+};
 
 export function initializeTheme(): void {
     if (typeof window === 'undefined') {
@@ -94,9 +97,13 @@ export function useAppearance(): UseAppearanceReturn {
         () => 'system',
     );
 
-    const resolvedAppearance: ResolvedAppearance = isDarkMode(appearance)
-        ? 'dark'
-        : 'light';
+    // Hydration must use the same snapshot as SSR before reading the browser's
+    // system preference. The actual theme updates immediately after hydration.
+    const resolvedAppearance: ResolvedAppearance = useSyncExternalStore(
+        subscribe,
+        () => (isDarkMode(currentAppearance) ? 'dark' : 'light'),
+        () => 'light',
+    );
 
     const updateAppearance = (mode: Appearance): void => {
         currentAppearance = mode;

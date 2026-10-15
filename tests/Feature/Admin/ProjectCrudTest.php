@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Admin;
 
+use App\Models\DupaSource;
 use App\Models\Equipment;
 use App\Models\ImportHistory;
 use App\Models\Item;
@@ -283,8 +284,9 @@ class ProjectCrudTest extends TestCase
         $admin = User::factory()->create(['is_super_admin' => true]);
         $section = $this->project()->sections()->create(['section' => 'PART I']);
 
+        $source = DupaSource::create(['source_file' => 'test.xlsx', 'worksheet' => 'Items', 'source_row' => 1, 'pay_item_no' => 'A.1', 'description' => 'Manual DUPA', 'unit' => 'l.s.']);
         $this->actingAs($admin)->post(route('admin.sections.dupas.store', $section), [
-            'pay_item_no' => 'A.1', 'description' => 'Manual DUPA', 'unit' => 'l.s.',
+            'dupa_source_id' => $source->id,
         ])->assertRedirect();
 
         $dupa = ProjectItem::query()->sole();

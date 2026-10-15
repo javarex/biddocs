@@ -72,6 +72,13 @@ export function AppSidebar() {
                   icon: FolderKanban,
               }
             : null,
+        can('projects.update')
+            ? {
+                  title: 'Backup Templates',
+                  href: '/admin/backup-templates',
+                  icon: FileSpreadsheet,
+              }
+            : null,
         can('imports.view')
             ? { title: 'Excel Imports', href: '/admin/imports', icon: Upload }
             : null,

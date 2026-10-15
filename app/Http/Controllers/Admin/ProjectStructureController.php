@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\DupaSource;
 use App\Models\Project;
 use App\Models\ProjectItem;
 use App\Models\Section;
 use App\Models\SubSection;
 use App\Services\DupaEstimateService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -41,7 +43,7 @@ class ProjectStructureController extends Controller
 
         $section = $data['type'] === 'section'
             ? null
-            : $project->sections()->findOrFail($data['parent_id'] ?? 0);
+            : $project->sections()->whereKey($request->integer('parent_id'))->firstOrFail();
         if ($data['type'] === 'dupa' && isset($data['sub_section_id'])) {
             $section->subSections()->findOrFail($data['sub_section_id']);
         }
@@ -51,10 +53,12 @@ class ProjectStructureController extends Controller
             'sub_section' => $section->subSections(),
             'dupa' => $section->projectItems()
                 ->where('sub_section_id', $data['sub_section_id'] ?? null),
+            default => abort(422, 'Unsupported row type.'),
         };
 
         $existing = $query->pluck('id')->map(fn ($id) => (int) $id)->sort()->values()->all();
-        $submitted = collect($data['ids'])->map(fn ($id) => (int) $id)->sort()->values()->all();
+        $submitted = array_map(fn ($id): int => (int) $id, $data['ids']);
+        sort($submitted);
         if ($existing !== $submitted) {
             abort(422, 'The row list has changed. Refresh the page and try again.');
         }
@@ -144,15 +148,38 @@ class ProjectStructureController extends Controller
         return back()->with('success', 'Subsection and its DUPA items deleted.');
     }
 
+    public function sources(Request $request, Project $project): JsonResponse
+    {
+        Gate::authorize('update', $project);
+        $request->validate(['search' => ['nullable', 'string', 'max:255']]);
+        $search = trim((string) $request->string('search'));
+        $records = DupaSource::query()
+            ->when($search !== '', fn ($query) => $query->where(function ($query) use ($search): void {
+                foreach (['pay_item_no', 'suffix', 'description', 'thickness_sizes', 'class', 'others', 'item_heading'] as $field) {
+                    $query->orWhere($field, 'like', "%{$search}%");
+                }
+                $query->orWhereRaw("REPLACE(CONCAT(pay_item_no, COALESCE(suffix, '')), ' ', '') LIKE ?", ['%'.str_replace(' ', '', $search).'%']);
+            }))
+            ->orderBy('pay_item_no')->orderBy('suffix')->orderBy('id')->limit(30)->get()
+            ->map(fn (DupaSource $source): array => ['id' => $source->id, ...$source->projectItemAttributes(), ...$source->only(['part', 'item_heading'])]);
+
+        return response()->json(['data' => $records]);
+    }
+
     public function storeDupa(Request $request, Section $section): RedirectResponse
     {
         Gate::authorize('update', $section->project);
-        $data = $request->validate([
+        $selection = $request->validate([
             'sub_section_id' => ['nullable', 'integer', Rule::exists('sub_sections', 'id')->where('section_id', $section->id)],
+            'dupa_source_id' => ['required', 'integer', Rule::exists('dupa_sources', 'id')],
+        ]);
+        $source = DupaSource::query()->findOrFail($request->integer('dupa_source_id'));
+        $data = validator($source->projectItemAttributes(), [
             'pay_item_no' => ['required', 'string', 'max:45'],
             'description' => ['required', 'string', 'max:10000'],
             'unit' => ['required', 'string', 'max:45'],
-        ]);
+        ])->validate();
+        $data['sub_section_id'] = $selection['sub_section_id'] ?? null;
         $dupa = ProjectItem::query()->create($data + [
             'section_id' => $section->id,
             'sort_order' => (int) $section->projectItems()->max('sort_order') + 1,
@@ -163,6 +190,9 @@ class ProjectStructureController extends Controller
         $this->estimates->initialize($dupa);
         $this->touch($section->project);
 
+        if ($request->boolean('open_estimate')) {
+            return to_route('admin.projects.dupa', ['project' => $section->project_id, 'estimate' => $dupa->id])->with('success', 'DUPA item created. Add its estimate resources.');
+        }
         if ($request->boolean('stay_on_structure')) {
             return back()->with('success', 'DUPA item added.');
         }
@@ -195,7 +225,7 @@ class ProjectStructureController extends Controller
         $dupa->delete();
         $this->touch($project);
 
-        return to_route('admin.projects.edit', $project)->with('success', 'DUPA item deleted.');
+        return to_route('admin.projects.dupa', $project)->with('success', 'DUPA item deleted.');
     }
 
     public function duplicateDupa(Request $request, ProjectItem $dupa): RedirectResponse
@@ -208,7 +238,7 @@ class ProjectStructureController extends Controller
             return back()->with('success', 'DUPA copied with its ADD/NON-ADD resources and estimates.');
         }
 
-        return to_route('admin.dupas.edit', $copy)
+        return to_route('admin.projects.dupa', ['project' => $project, 'estimate' => $copy->id])
             ->with('success', 'DUPA copied with its ADD/NON-ADD resources and estimates.');
     }
 

@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Admin\BackupTemplateController;
+use App\Http\Controllers\Admin\DupaBackupController;
 use App\Http\Controllers\Admin\DupaSourceController;
 use App\Http\Controllers\Admin\ImportController;
 use App\Http\Controllers\Admin\ProjectBidDocumentController;
@@ -54,6 +56,9 @@ Route::middleware(['auth', 'active'])->group(function () {
             Route::resource('roles', RoleController::class)->except(['show']);
         });
 
+        Route::get('backup-templates', [BackupTemplateController::class, 'index'])->name('backup-templates.index');
+        Route::post('backup-templates/{template}/visibility', [BackupTemplateController::class, 'visibility'])->name('backup-templates.visibility');
+
         Route::get('projects', [ProjectController::class, 'index'])->name('projects.index');
         Route::get('projects/create', [ProjectController::class, 'create'])->name('projects.create');
         Route::post('projects', [ProjectController::class, 'store'])->name('projects.store');
@@ -81,6 +86,10 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::post('dupas/{dupa}/duplicate', [ProjectStructureController::class, 'duplicateDupa'])->name('dupas.duplicate');
         Route::put('dupas/{dupa}', [ProjectEstimateController::class, 'updateDupa'])->name('dupas.update');
         Route::delete('dupas/{dupa}', [ProjectStructureController::class, 'destroyDupa'])->name('dupas.destroy');
+        Route::get('projects/{project}/dupa-sources', [ProjectStructureController::class, 'sources'])->name('projects.dupa-sources');
+        Route::post('dupas/{dupa}/copy-add', [ProjectEstimateController::class, 'copyAdd'])->name('dupas.copy-add');
+        Route::post('dupas/{dupa}/backup-templates/{template}/exclusion', [DupaBackupController::class, 'excludeTemplate'])->name('dupas.backup-templates.exclusion');
+        Route::post('dupas/{dupa}/estimates/{type}/backups/{action}', [DupaBackupController::class, 'handle'])->name('dupas.backups');
         Route::put('dupas/{dupa}/estimates/{type}', [ProjectEstimateController::class, 'updateEstimate'])->name('dupas.estimates.update');
         Route::put('projects/{project}/estimate-settings', [ProjectEstimateController::class, 'updateProject'])->name('projects.estimate-settings.update');
 

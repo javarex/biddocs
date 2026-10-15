@@ -3,18 +3,22 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\DupaBackupTemplate;
 use App\Models\Equipment;
 use App\Models\Item;
 use App\Models\Labor;
 use App\Models\Miscellaneous;
 use App\Models\Project;
 use App\Models\ProjectItem;
+use App\Services\Backup\ExcavationTemplate;
 use App\Services\DupaEstimateService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -32,6 +36,7 @@ class ProjectEstimateController extends Controller
             'estimates' => fn ($query) => $query->orderBy('estimate_type'),
             'estimates.labors' => fn ($query) => $query->orderBy('sort_order'),
             'estimates.equipment' => fn ($query) => $query->orderBy('sort_order'),
+            'estimates.backups',
             'estimates.items' => fn ($query) => $query->orderBy('sort_order'),
         ]);
         $orderedIds = ProjectItem::query()
@@ -54,6 +59,10 @@ class ProjectEstimateController extends Controller
         return Inertia::render(
             $request->boolean('embedded') ? 'admin/projects/dupa-embed' : 'admin/projects/dupa-edit',
             [
+                'backupTemplates' => array_merge(
+                    [['id' => 0, 'name' => '803 (1)a Structure Excavation (ADD example)', 'version' => 1, 'creator' => ['name' => 'Workbook example'], 'definition' => ExcavationTemplate::definition()]],
+                    DupaBackupTemplate::query()->where('project_id', $project->id)->visibleTo($request->user()->id)->with('creator:id,name')->orderBy('name')->get()->toArray(),
+                ),
                 'embedded' => $request->boolean('embedded'),
                 'project' => $project->only(['id', 'project_code', 'project_name']),
                 'dupa' => [
@@ -114,10 +123,12 @@ class ProjectEstimateController extends Controller
         abort_unless(in_array($type, ['ADD', 'NON_ADD'], true), 404);
         Gate::authorize('update', $dupa->section->project);
         $data = $request->validate([
+            'backup_revision' => ['sometimes', 'integer', 'min:0'],
             'quantity' => ['required', 'numeric', 'min:0', 'max:99999999999999'],
             'ocm_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
             'profit_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
             'vat_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
+            'labors.*.row_uuid' => ['nullable', 'uuid', 'distinct'],
             'labors' => ['array'],
             'labors.*.labor_id' => ['required', 'integer', Rule::exists('labors', 'id')],
             'labors.*.designation' => ['required', 'string', 'max:255'],
@@ -125,6 +136,7 @@ class ProjectEstimateController extends Controller
             'labors.*.no_of_days' => ['required', 'numeric', 'min:0'],
             'labors.*.rate' => ['required', 'numeric', 'min:0'],
             'labors.*.is_included' => ['required', 'boolean'],
+            'equipment.*.row_uuid' => ['nullable', 'uuid', 'distinct'],
             'equipment' => ['array'],
             'equipment.*.equipment_id' => ['required', 'integer', Rule::exists('equipments', 'id')],
             'equipment.*.designation' => ['required', 'string', 'max:255'],
@@ -132,6 +144,7 @@ class ProjectEstimateController extends Controller
             'equipment.*.no_of_days' => ['required', 'numeric', 'min:0'],
             'equipment.*.rental_unit_cost' => ['required', 'numeric', 'min:0'],
             'equipment.*.is_included' => ['required', 'boolean'],
+            'items.*.row_uuid' => ['nullable', 'uuid', 'distinct'],
             'items' => ['array'],
             'items.*.item_id' => ['required', 'integer', Rule::exists('items', 'id')],
             'items.*.qty' => ['required', 'numeric', 'min:0'],
@@ -139,9 +152,25 @@ class ProjectEstimateController extends Controller
             'items.*.is_included' => ['required', 'boolean'],
         ]);
         $data['items'] = $this->hydrateCatalogItems($data['items'] ?? []);
-        $this->estimates->save($dupa, $type, $data);
+        DB::transaction(function () use ($dupa, $type, $data): void {
+            $dupa->estimates()->firstOrCreate(['estimate_type' => $type], ['calculation_mode' => 'resources']);
+            $estimate = $dupa->estimates()->where('estimate_type', $type)->lockForUpdate()->firstOrFail();
+            if (isset($data['backup_revision']) && $estimate->backup_revision !== $data['backup_revision']) {
+                throw ValidationException::withMessages(['backup' => 'This estimate changed. Reload before saving.']);
+            }
+            $this->estimates->save($dupa, $type, $data);
+        });
 
         return back()->with('success', "{$type} estimate updated.");
+    }
+
+    public function copyAdd(Request $request, ProjectItem $dupa): RedirectResponse
+    {
+        Gate::authorize('update', $dupa->section->project);
+        $data = $request->validate(['add_revision' => ['required', 'integer'], 'non_add_revision' => ['required', 'integer']]);
+        $this->estimates->copyAddToNonAdd($dupa, $data['add_revision'], $data['non_add_revision']);
+
+        return back()->with('success', 'ADD copied to NON-ADD with independent backups.');
     }
 
     public function updateProject(Request $request, Project $project): RedirectResponse
@@ -211,7 +240,7 @@ class ProjectEstimateController extends Controller
             ->unique('itemcode')
             ->keyBy('itemcode');
 
-        return collect($rows)->map(function (array $row, int $index) use ($items, $activePrices, $latestPrices): array {
+        return array_values(collect($rows)->map(function (array $row, int $index) use ($items, $activePrices, $latestPrices): array {
             $item = $items->get((int) $row['item_id']);
             $price = $item
                 ? ($activePrices->get($item->itemcode) ?? $latestPrices->get($item->itemcode))
@@ -229,11 +258,11 @@ class ProjectEstimateController extends Controller
                 'unit_cost' => $price->price,
                 'group' => filled($row['group'] ?? null) ? trim((string) $row['group']) : null,
             ];
-        })->all();
+        })->all());
     }
 
-    /** @return \Illuminate\Support\Collection<int, array<string, mixed>> */
-    private function pricedItems(): \Illuminate\Support\Collection
+    /** @return Collection<int, array{id: mixed, itemcode: mixed, description: mixed, unit: mixed, price: float}> */
+    private function pricedItems(): Collection
     {
         $today = now()->toDateString();
 

@@ -1,6 +1,11 @@
 import { Head } from '@inertiajs/react';
+import { Pencil } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import PageHeader from '@/components/page-header';
+import ProjectDupaActions, {
+    DupaEstimateDialog,
+} from '@/components/project-dupa-workspace';
+import type { DupaSection } from '@/components/project-dupa-workspace';
 import { Button } from '@/components/ui/button';
 import type { Item, Props } from './show';
 
@@ -11,8 +16,16 @@ const number = new Intl.NumberFormat('en-PH', {
 const value = (n: number | undefined) =>
     n === undefined ? '—' : number.format(n);
 
-export default function ProjectDupa({ project }: Pick<Props, 'project'>) {
+export default function ProjectDupa({
+    project,
+    dupaSections = [],
+    openEstimateId = null,
+}: Pick<Props, 'project'> & {
+    dupaSections?: DupaSection[];
+    openEstimateId?: number | null;
+}) {
     const [side, setSide] = useState<'ADD' | 'NON_ADD'>('ADD');
+    const [editingItem, setEditingItem] = useState<Item | null>(null);
     const items = project.sections.flatMap((section) => [
         ...section.items,
         ...section.sub_sections.flatMap((sub) => sub.items),
@@ -38,7 +51,23 @@ export default function ProjectDupa({ project }: Pick<Props, 'project'>) {
         return (
             <tr key={item.id} className="hover:bg-slate-50">
                 <td className={`${cell} text-center`}>{item.pay_item_no}</td>
-                <td className={cell}>{item.description}</td>
+                <td className={cell}>
+                    <div className="flex items-start justify-between gap-2">
+                        <span>{item.description}</span>
+                        {project.can_edit && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="shrink-0 print:hidden"
+                                aria-label={`Edit DUPA ${item.pay_item_no}`}
+                                onClick={() => setEditingItem(item)}
+                            >
+                                <Pencil className="size-3.5" /> Edit
+                            </Button>
+                        )}
+                    </div>
+                </td>
                 <td className={`${cell} text-right`}>
                     {estimate && selectedTotal > 0
                         ? `${number.format((estimate.total_cost / selectedTotal) * 100)} %`
@@ -64,10 +93,26 @@ export default function ProjectDupa({ project }: Pick<Props, 'project'>) {
     return (
         <>
             <Head title={`DUPA · ${project.project_name}`} />
+            {project.can_edit && editingItem && (
+                <DupaEstimateDialog
+                    key={editingItem.id}
+                    item={editingItem}
+                    onClose={() => setEditingItem(null)}
+                />
+            )}
             <div className="space-y-6 p-4 md:p-6">
                 <PageHeader
                     title="DUPA"
                     description={project.project_name}
+                    action={
+                        project.can_edit ? (
+                            <ProjectDupaActions
+                                projectId={project.id}
+                                sections={dupaSections}
+                                openEstimateId={openEstimateId}
+                            />
+                        ) : undefined
+                    }
                     backHref="/admin/projects"
                 />
                 <div className="flex flex-wrap items-center gap-2">

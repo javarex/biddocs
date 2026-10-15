@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/** @property string|null $row_uuid */
 class EquipmentDupa extends Model
 {
     protected $table = 'equipment_dupa';

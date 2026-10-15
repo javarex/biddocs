@@ -1,0 +1,290 @@
+.dupa-worksheet {
+    color-scheme: light;
+    --background: #fff;
+    --foreground: #1e293b;
+    --card: #fff;
+    --card-foreground: #1e293b;
+    --primary: #217346;
+    --primary-foreground: #fff;
+    --secondary: #eaf2ed;
+    --secondary-foreground: #185c37;
+    --muted: #f1f5f3;
+    --muted-foreground: #64748b;
+    --accent: #eaf2ed;
+    --accent-foreground: #185c37;
+    --border: #cbd5e1;
+    --input: #cbd5e1;
+    --ring: #217346;
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --sheet-line: #cbd5e1;
+    --sheet-header: #eaf2ed;
+    --sheet-paper: #fff;
+    --sheet-ink: #1e293b;
+    background: #f1f5f3;
+    color: var(--sheet-ink);
+    font-size: 13px;
+}
+
+.dupa-worksheet > * + * {
+    margin-top: 12px;
+}
+.dupa-worksheet [data-slot='card'] {
+    border-radius: 0;
+    box-shadow: none;
+    gap: 0;
+    padding-block: 0;
+    border-color: var(--sheet-line);
+    background: var(--sheet-paper);
+}
+.dupa-worksheet [data-slot='card-header'] {
+    padding: 14px 16px;
+}
+.dupa-worksheet [data-slot='card-content'] {
+    padding: 12px;
+}
+.dupa-worksheet .dupa-analysis > [data-slot='card-header'] {
+    background: var(--sheet-header);
+    border-bottom: 2px solid #217346;
+}
+.dupa-worksheet [data-worksheet-toolbar] {
+    padding: 8px;
+    border: 1px solid var(--sheet-line);
+    background: var(--sheet-paper);
+}
+.dupa-worksheet input:not([type='checkbox']),
+.dupa-worksheet select,
+.dupa-worksheet button {
+    min-height: 32px;
+    height: 32px;
+    border-radius: 2px;
+    font-size: 12px;
+}
+.dupa-worksheet input:not([type='checkbox']),
+.dupa-worksheet select {
+    min-width: 0;
+    width: 100%;
+}
+.dupa-worksheet input[type='number'] {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.dupa-worksheet .dupa-resource-sheet {
+    border-color: var(--sheet-line);
+    background: var(--sheet-paper);
+}
+.dupa-resource-sheet
+    > div:first-child:not([data-sheet-columns]):not([data-sheet-row]) {
+    padding: 8px 10px;
+    background: var(--sheet-header);
+    border-bottom: 1px solid var(--sheet-line);
+}
+.dupa-resource-sheet [data-sheet-columns],
+.dupa-resource-sheet [data-sheet-row] {
+    grid-template-columns:
+        2.5rem clamp(14rem, 23vw, 20rem) repeat(3, minmax(8rem, 1fr))
+        minmax(10rem, 1.25fr) 4rem 3rem;
+    min-width: 64rem;
+    gap: 0;
+    padding: 0;
+    margin: 0;
+    align-items: stretch;
+}
+.dupa-resource-sheet[data-sheet-section='items'] [data-sheet-columns],
+.dupa-resource-sheet[data-sheet-section='items'] [data-sheet-row] {
+    grid-template-columns:
+        2.5rem clamp(14rem, 23vw, 20rem)
+        4rem minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(9rem, 1fr)
+        minmax(10rem, 1.25fr) 4rem 3rem;
+    min-width: 68rem;
+}
+.dupa-resource-sheet [data-sheet-columns] {
+    background: var(--sheet-header);
+}
+.dupa-resource-sheet [data-sheet-columns] > span {
+    text-align: center;
+    border-right: 1px solid var(--sheet-line);
+    padding: 9px 8px;
+}
+.dupa-resource-sheet [data-sheet-row] {
+    min-height: 65px;
+    border-bottom: 1px solid var(--sheet-line);
+    background: var(--sheet-paper);
+}
+.dupa-resource-sheet [data-sheet-row]:hover {
+    background: var(--sheet-header);
+}
+.dupa-resource-sheet [data-sheet-row] > * {
+    border-right: 1px solid var(--sheet-line);
+    min-width: 0;
+    margin: 0;
+}
+.dupa-resource-sheet [data-sheet-row] > span:first-child {
+    padding-top: 10px;
+    background: var(--sheet-header);
+}
+.dupa-resource-sheet [data-sheet-row] input:not([type='checkbox']),
+.dupa-resource-sheet [data-sheet-row] select {
+    height: 32px;
+    min-height: 32px;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding-inline: 8px;
+    background: transparent;
+    color: var(--sheet-ink);
+}
+.dupa-resource-sheet [data-sheet-row] > input {
+    border-right: 1px solid var(--sheet-line);
+}
+.dupa-resource-sheet [data-sheet-row] input:focus,
+.dupa-resource-sheet [data-sheet-row] select:focus {
+    outline: 2px solid #217346;
+    outline-offset: -2px;
+}
+.dupa-resource-sheet [data-sheet-row] input[readonly] {
+    background: var(--sheet-header);
+}
+.dupa-resource-sheet [data-sheet-row] .space-y-1 > * {
+    margin-block: 0;
+}
+.dupa-resource-sheet [data-sheet-row] .space-y-1 > select {
+    border-top: 1px dotted var(--sheet-line);
+    font-size: 10px;
+    color: #64748b;
+}
+.dupa-resource-sheet [data-sheet-row] > output {
+    background: var(--sheet-paper);
+    padding: 10px 8px;
+}
+.dupa-resource-sheet [data-sheet-row] > div:not(.space-y-1) {
+    padding: 0;
+    align-items: flex-start;
+}
+.dupa-resource-sheet [data-sheet-row] > label {
+    align-items: flex-start;
+    padding-top: 10px;
+}
+.dupa-resource-sheet [data-sheet-row] > div > button {
+    width: 32px;
+    padding: 6px;
+}
+.dupa-resource-sheet [data-sheet-row] > div.truncate {
+    padding: 8px;
+}
+.dupa-resource-sheet [data-sheet-row] > div.min-h-8 {
+    padding: 8px;
+}
+
+.dupa-worksheet .dupa-totals {
+    width: min(100%, 30rem);
+    margin-left: auto;
+    border: 1px solid var(--sheet-line);
+    background: var(--sheet-paper);
+}
+.dupa-totals > div {
+    display: grid;
+    grid-template-columns: 1fr 12rem;
+    border-bottom: 1px solid var(--sheet-line);
+}
+.dupa-totals > div > div {
+    padding: 7px 10px;
+}
+.dupa-totals > div > div:last-child {
+    border-left: 1px solid var(--sheet-line);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.dupa-totals > div:nth-child(4),
+.dupa-totals > div:nth-last-child(-n + 2) {
+    background: var(--sheet-header);
+    font-weight: 600;
+}
+.dupa-totals > div:last-child {
+    border-bottom: 0;
+    border-top: 2px solid #217346;
+}
+
+.dupa-worksheet,
+.dupa-worksheet [data-slot='card'],
+.dupa-worksheet [data-slot='card-content'],
+.dupa-worksheet .dupa-resource-sheet {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.dupa-resource-sheet [data-sheet-columns],
+.dupa-resource-sheet [data-sheet-row] {
+    position: relative;
+}
+.dupa-worksheet [data-sheet-picker],
+.dupa-worksheet [data-sheet-footer] {
+    border: 1px solid var(--sheet-line);
+    border-radius: 0;
+    background: var(--sheet-paper);
+    box-shadow: none;
+}
+.dupa-worksheet input:not([type='checkbox']),
+.dupa-worksheet select {
+    border-color: var(--sheet-line);
+    background-color: var(--sheet-paper);
+    color: var(--sheet-ink);
+}
+.dupa-worksheet [data-worksheet-toolbar] .sheet-tab-active,
+.dupa-worksheet [data-sheet-footer] .sheet-save {
+    background: #217346;
+    color: #fff;
+    border-color: #217346;
+}
+
+.dupa-worksheet button.sheet-new-equipment {
+    border-radius: 0;
+}
+.dupa-worksheet .sheet-add-labor {
+    color: #217346;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    background: transparent;
+    border: 0;
+}
+.dupa-resource-sheet [data-sheet-row] > .backup-days-cell {
+    display: block;
+}
+
+/* Each section owns its heading, entry controls and scrolling worksheet. */
+.dupa-worksheet .dupa-resource-sheet {
+    border: 1px solid #94a3b8;
+}
+.dupa-worksheet .dupa-resource-sheet + .dupa-resource-sheet {
+    margin-top: 16px;
+}
+.dupa-resource-sheet > [data-sheet-picker] {
+    border: 0;
+    border-bottom: 1px solid var(--sheet-line);
+    padding: 10px;
+}
+.dupa-resource-sheet [data-sheet-grid] {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.dupa-resource-sheet[data-sheet-section='labor'] [data-sheet-row] {
+    min-height: 33px;
+}
+.dupa-resource-sheet[data-sheet-section='labor'] [data-sheet-row] > output {
+    padding-block: 8px;
+}

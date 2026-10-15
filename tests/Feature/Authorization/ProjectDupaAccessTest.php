@@ -24,7 +24,7 @@ class ProjectDupaAccessTest extends TestCase
         $user->roles()->attach(Role::where('slug', 'dupa-viewer')->sole());
         $this->actingAs($user)->get(route('admin.projects.dupa', $project))->assertOk()
             ->assertInertia(fn (Assert $page) => $page->component('admin/projects/dupa')
-                ->where('project.project_name', 'School building')->where('project.can_edit', false));
+                ->where('project.project_name', 'School building')->where('project.can_edit', false)->missing('dupaSections'));
         $this->actingAs($user)->get(route('admin.projects.edit', $project))->assertForbidden();
         $this->actingAs($user)->get(route('admin.projects.index'))->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('can_view_dupa', true));

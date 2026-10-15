@@ -9,8 +9,10 @@ use App\Models\MaterialDupa;
 use App\Models\Project;
 use App\Models\ProjectEstimateSetting;
 use App\Models\ProjectItem;
+use App\Services\Backup\Calculator;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class DupaEstimateService
@@ -40,6 +42,19 @@ class DupaEstimateService
                 ['calculation_mode' => 'resources'],
             );
 
+            $estimate = DupaEstimate::query()->whereKey($estimate->id)->lockForUpdate()->firstOrFail();
+            foreach (['labors', 'equipment', 'items'] as $kind) {
+                foreach ($data[$kind] ?? [] as $index => $row) {
+                    $data[$kind][$index]['row_uuid'] = $row['row_uuid'] ?? (string) Str::uuid();
+                }
+            }
+            if ($estimate->backup_applied) {
+                try {
+                    $data = (new Calculator)->preview($estimate->backup_applied['document'], $data)['estimate'];
+                } catch (\InvalidArgumentException $exception) {
+                    throw ValidationException::withMessages(['backup' => $exception->getMessage()]);
+                }
+            }
             $estimate->labors()->delete();
             $estimate->equipment()->delete();
             $estimate->items()->delete();
@@ -61,6 +76,7 @@ class DupaEstimateService
                     'rate' => $row['rate'],
                     'is_included' => $included,
                     'sort_order' => $index,
+                    'row_uuid' => $row['row_uuid'],
                 ]);
             }
 
@@ -81,6 +97,7 @@ class DupaEstimateService
                     'rental_unit_cost' => $row['rental_unit_cost'],
                     'is_included' => $included,
                     'sort_order' => $index,
+                    'row_uuid' => $row['row_uuid'],
                 ]);
             }
 
@@ -102,6 +119,7 @@ class DupaEstimateService
                     'unit_cost' => $row['unit_cost'],
                     'is_included' => $included,
                     'sort_order' => $index,
+                    'row_uuid' => $row['row_uuid'],
                 ]);
             }
 
@@ -119,6 +137,7 @@ class DupaEstimateService
 
             $estimate->update([
                 'calculation_mode' => 'resources',
+                'backup_revision' => $estimate->backup_revision + 1,
                 'quantity' => $quantity,
                 'ocm_percentage' => $data['ocm_percentage'],
                 'profit_percentage' => $data['profit_percentage'],
@@ -151,6 +170,7 @@ class DupaEstimateService
                 'estimates.labors',
                 'estimates.equipment',
                 'estimates.items',
+                'estimates.backups',
             ]);
             Project::query()->whereKey($source->section->project_id)->lockForUpdate()->firstOrFail();
 
@@ -182,14 +202,24 @@ class DupaEstimateService
                     ],
                     Arr::except($sourceEstimate->getAttributes(), [
                         'id', 'dupa_id', 'estimate_type', 'created_at', 'updated_at',
+                        'backup_applied', 'backup_bindings', 'backup_revision',
                     ]),
                 );
 
+                $uuidMap = [];
+                foreach (['labors', 'equipment', 'items'] as $kind) {
+                    foreach ($sourceEstimate->$kind as $row) {
+                        if ($row->row_uuid) {
+                            $uuidMap[$row->row_uuid] = (string) Str::uuid();
+                        }
+                    }
+                }
                 foreach ($sourceEstimate->labors as $row) {
                     LaborDupa::query()->create([
                         ...Arr::except($row->getAttributes(), ['id', 'dupa_id', 'estimate_id']),
                         'dupa_id' => $copy->id,
                         'estimate_id' => $estimate->id,
+                        'row_uuid' => $uuidMap[$row->row_uuid] ?? (string) Str::uuid(),
                     ]);
                 }
                 foreach ($sourceEstimate->equipment as $row) {
@@ -197,6 +227,7 @@ class DupaEstimateService
                         ...Arr::except($row->getAttributes(), ['id', 'dupa_id', 'estimate_id']),
                         'dupa_id' => $copy->id,
                         'estimate_id' => $estimate->id,
+                        'row_uuid' => $uuidMap[$row->row_uuid] ?? (string) Str::uuid(),
                     ]);
                 }
                 foreach ($sourceEstimate->items as $row) {
@@ -204,8 +235,20 @@ class DupaEstimateService
                         ...Arr::except($row->getAttributes(), ['id', 'dupa_id', 'estimate_id']),
                         'dupa_id' => $copy->id,
                         'estimate_id' => $estimate->id,
+                        'row_uuid' => $uuidMap[$row->row_uuid] ?? (string) Str::uuid(),
                     ]);
                 }
+                $remap = fn ($value) => json_decode(strtr(json_encode($value, JSON_THROW_ON_ERROR), $uuidMap), true, 512, JSON_THROW_ON_ERROR);
+                foreach ($sourceEstimate->backups as $backup) {
+                    $estimate->backups()->create([
+                        ...$remap($backup->only(['key', 'owner_type', 'owner_uuid', 'name', 'schema_version', 'definition'])),
+                    ]);
+                }
+                $estimate->update([
+                    'backup_bindings' => $remap($sourceEstimate->backup_bindings),
+                    'backup_applied' => $remap($sourceEstimate->backup_applied),
+                    'backup_revision' => 0,
+                ]);
             }
 
             $copy->updateQuietly($source->only([
@@ -216,6 +259,39 @@ class DupaEstimateService
             $source->section->project->update(['estimates_updated_at' => now()]);
 
             return $copy;
+        });
+    }
+
+    public function copyAddToNonAdd(ProjectItem $dupa, int $addRevision, int $nonAddRevision): void
+    {
+        DB::transaction(function () use ($dupa, $addRevision, $nonAddRevision): void {
+            $estimates = $dupa->estimates()->orderBy('id')->lockForUpdate()->get()->keyBy('estimate_type');
+            $source = $estimates['ADD']->load(['labors', 'equipment', 'items', 'backups']);
+            $target = $estimates['NON_ADD'];
+            if ($source->backup_revision !== $addRevision || $target->backup_revision !== $nonAddRevision) {
+                throw ValidationException::withMessages(['backup' => 'The estimate changed. Reload before copying.']);
+            }
+            $data = $source->toArray();
+            $map = [];
+            foreach (['labors', 'equipment', 'items'] as $kind) {
+                foreach ($data[$kind] ?? [] as $index => $row) {
+                    $uuid = (string) Str::uuid();
+                    if ($row['row_uuid']) {
+                        $map[$row['row_uuid']] = $uuid;
+                    }
+                    $data[$kind][$index]['row_uuid'] = $uuid;
+                }
+            }
+            $remap = fn ($value) => json_decode(strtr(json_encode($value, JSON_THROW_ON_ERROR), $map), true, 512, JSON_THROW_ON_ERROR);
+            $target->backups()->delete();
+            $target->update([
+                'backup_applied' => $remap($source->backup_applied),
+                'backup_bindings' => $remap($source->backup_bindings),
+            ]);
+            $this->save($dupa, 'NON_ADD', $data);
+            foreach ($source->backups as $backup) {
+                $target->backups()->create($remap($backup->only(['key', 'owner_type', 'owner_uuid', 'name', 'schema_version', 'definition'])));
+            }
         });
     }
 
