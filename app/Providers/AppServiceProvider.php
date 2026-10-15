@@ -66,6 +66,7 @@ class AppServiceProvider extends ServiceProvider
             'imports.download_errors',
             'imports.delete',
             'projects.view',
+            'projects.dupa.view',
             'projects.create',
             'projects.update',
             'projects.import',

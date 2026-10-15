@@ -49,6 +49,8 @@ class AuthorizationSeeder extends Seeder
             Permission::updateOrCreate(['slug' => $permission['slug']], $permission);
         }
 
+        $this->call(ProjectDupaPermissionSeeder::class);
+
         $role = Role::updateOrCreate(
             ['slug' => 'administrator'],
             ['name' => 'Administrator', 'description' => 'Full application access through explicit permissions.'],

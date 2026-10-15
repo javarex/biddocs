@@ -46,6 +46,7 @@ class ProjectController extends Controller
             'projects' => $projects,
             'filters' => ['search' => $search],
             'can_create' => Gate::allows('projects.create'),
+            'can_view_dupa' => Gate::allows('projects.dupa.view'),
         ]);
     }
 
@@ -93,6 +94,19 @@ class ProjectController extends Controller
     public function show(Project $project): Response
     {
         Gate::authorize('projects.view');
+
+        return $this->projectSummary($project, 'admin/projects/show');
+    }
+
+    public function dupa(Project $project): Response
+    {
+        Gate::authorize('projects.dupa.view');
+
+        return $this->projectSummary($project, 'admin/projects/dupa');
+    }
+
+    private function projectSummary(Project $project, string $component): Response
+    {
         $project->load([
             'sections' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'),
             'sections.projectItems' => fn ($query) => $query->whereNull('sub_section_id')->orderBy('sort_order')->orderBy('id'),
@@ -102,7 +116,8 @@ class ProjectController extends Controller
             'sections.subSections.projectItems.estimates',
         ]);
 
-        return Inertia::render('admin/projects/show', [
+        return Inertia::render($component, [
+            'can_view_dupa' => Gate::allows('projects.dupa.view'),
             'project' => [
                 ...$project->only([
                     'id', 'project_code', 'project_name', 'project_description', 'source_of_funds',
@@ -124,7 +139,7 @@ class ProjectController extends Controller
                     ])->values(),
                 ])->values(),
             ],
-            'totals' => $this->estimates->projectTotals($project),
+            'totals' => $component === 'admin/projects/dupa' ? null : $this->estimates->projectTotals($project),
         ]);
     }
 

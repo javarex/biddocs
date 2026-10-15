@@ -1,8 +1,7 @@
-import { Head, Link, router } from '@inertiajs/react';
-import { FileSpreadsheet, FileText, Pencil, Trash2 } from 'lucide-react';
-import ConfirmDialog from '@/components/confirm-dialog';
+import { Head, Link } from '@inertiajs/react';
 import EmptyState from '@/components/empty-state';
 import PageHeader from '@/components/page-header';
+import ProjectActions from '@/components/project-actions';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -12,13 +11,13 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 
-type Estimate = {
+export type Estimate = {
     quantity: number;
     direct_cost: number;
     total_cost: number;
     unit_cost: number;
 };
-type Item = {
+export type Item = {
     id: number;
     pay_item_no: string;
     description: string;
@@ -37,7 +36,7 @@ type Total = {
     charges_total: number;
     grand_total: number;
 };
-type Props = {
+export type Props = {
     project: {
         id: number;
         project_code: string | null;
@@ -56,6 +55,7 @@ type Props = {
         can_delete: boolean;
         sections: Section[];
     };
+    can_view_dupa: boolean;
     totals: Record<'ADD' | 'NON_ADD', Total>;
 };
 const amount = new Intl.NumberFormat('en-PH', {
@@ -67,7 +67,11 @@ const peso = new Intl.NumberFormat('en-PH', {
     currency: 'PHP',
 });
 
-export default function ProjectsShow({ project, totals }: Props) {
+export default function ProjectsShow({
+    project,
+    totals,
+    can_view_dupa,
+}: Props) {
     const itemCount = project.sections.reduce(
         (count, section) =>
             count +
@@ -87,48 +91,10 @@ export default function ProjectsShow({ project, totals }: Props) {
                         .join(' · ')}
                     backHref="/admin/projects"
                     action={
-                        <div className="flex flex-wrap gap-2">
-                            {project.can_edit && (
-                                <Button asChild variant="outline">
-                                    <Link
-                                        href={`/admin/projects/${project.id}/edit`}
-                                    >
-                                        <Pencil /> Edit project
-                                    </Link>
-                                </Button>
-                            )}
-                            <Button asChild variant="outline">
-                                <Link
-                                    href={`/admin/projects/${project.id}/bid-docs`}
-                                >
-                                    <FileText /> View Bid Docs
-                                </Link>
-                            </Button>
-                            <Button asChild>
-                                <Link
-                                    href={`/admin/projects/${project.id}/import`}
-                                >
-                                    <FileSpreadsheet /> Excel Imports
-                                </Link>
-                            </Button>
-                            {project.can_delete && (
-                                <ConfirmDialog
-                                    title="Delete project?"
-                                    description="This permanently deletes the project, hierarchy, estimates, and saved bid document."
-                                    confirmLabel="Delete"
-                                    destructive
-                                    onConfirm={() =>
-                                        router.delete(
-                                            `/admin/projects/${project.id}`,
-                                        )
-                                    }
-                                >
-                                    <Button variant="destructive">
-                                        <Trash2 /> Delete project
-                                    </Button>
-                                </ConfirmDialog>
-                            )}
-                        </div>
+                        <ProjectActions
+                            project={project}
+                            canViewDupa={can_view_dupa}
+                        />
                     }
                 />
 
