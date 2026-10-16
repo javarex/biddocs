@@ -7,15 +7,19 @@ export default function PageHeader({
     description,
     action,
     backHref,
+    compact = false,
 }: {
     title: string;
     description?: string;
     action?: React.ReactNode;
     backHref?: string;
+    compact?: boolean;
 }) {
     return (
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-3">
+        <div
+            className={`flex flex-col ${compact ? 'gap-2' : 'gap-4'} sm:flex-row sm:items-center sm:justify-between`}
+        >
+            <div className={`flex items-start ${compact ? 'gap-2' : 'gap-3'}`}>
                 {backHref && (
                     <Button asChild variant="ghost" size="icon">
                         <Link href={backHref} aria-label="Back">
@@ -24,7 +28,9 @@ export default function PageHeader({
                     </Button>
                 )}
                 <div>
-                    <h1 className="text-2xl font-semibold tracking-tight">
+                    <h1
+                        className={`${compact ? 'text-lg' : 'text-2xl'} font-semibold tracking-tight`}
+                    >
                         {title}
                     </h1>
                     {description && (

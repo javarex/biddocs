@@ -39,6 +39,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { estimateDraftKey } from '@/lib/estimate-draft-key';
+import { laborDays, parseLaborDaysFormula } from '@/lib/labor-days-formula';
 
 type Side = 'ADD' | 'NON_ADD';
 type LaborCatalog = {
@@ -186,10 +188,21 @@ export default function DupaEdit({
         catalogs.equipment,
     );
     const itemCatalog = catalogs.items;
-    const [dirty, setDirty] = useState<Record<Side, boolean>>({
-        ADD: false,
-        NON_ADD: false,
+    const [savedEstimateKeys, setSavedEstimateKeys] = useState<
+        Record<Side, string>
+    >({
+        ADD: estimateDraftKey(dupa.estimates.ADD),
+        NON_ADD: estimateDraftKey(dupa.estimates.NON_ADD),
     });
+    const dirty = useMemo(
+        () => ({
+            ADD: estimateDraftKey(estimates.ADD) !== savedEstimateKeys.ADD,
+            NON_ADD:
+                estimateDraftKey(estimates.NON_ADD) !==
+                savedEstimateKeys.NON_ADD,
+        }),
+        [estimates, savedEstimateKeys],
+    );
     const [savedBackupTemplates, setSavedBackupTemplates] =
         useState(backupTemplates);
     const [backupDirty, setBackupDirty] = useState(false);
@@ -271,7 +284,7 @@ export default function DupaEdit({
             <select
                 aria-label={`Value source for ${kind} ${uuid ?? 'unsaved'} ${field}`}
                 className="w-full min-w-0 rounded border bg-background px-1 py-1 text-xs"
-                disabled={saving || dirty[side] || !uuid}
+                disabled={saving || backupDirty || !uuid}
                 value={binding?.formula ?? ''}
                 onChange={(e) =>
                     void switchResult(kind, field, uuid!, e.target.value)
@@ -299,45 +312,97 @@ export default function DupaEdit({
         formula: string,
         manualValue?: string,
     ): Promise<boolean> {
+        let sourceEstimate = estimate;
         setSaving(true);
         setEstimateErrors({});
-        const document = {
-            backups: (estimate.backups ?? []).map(
-                ({
-                    key,
-                    owner_type,
-                    owner_uuid,
-                    name,
-                    schema_version,
-                    definition,
-                }) => ({
-                    key,
-                    owner_type,
-                    owner_uuid,
-                    name,
-                    schema_version,
-                    definition,
-                }),
-            ),
-            bindings: [
-                ...(estimate.backup_applied?.document.bindings ?? []).filter(
-                    (b) =>
-                        !(
-                            b.kind === kind &&
-                            b.field === field &&
-                            b.row_uuid === uuid
-                        ),
-                ),
-                ...(formula ? [{ kind, field, row_uuid: uuid, formula }] : []),
-            ],
-        };
 
         try {
+            if (backupDirty) {
+                throw new Error(
+                    'Apply or discard backup draft changes before linking a result.',
+                );
+            }
+
+            if (dirty[side]) {
+                const response = await fetch(
+                    `/admin/dupas/${dupa.id}/estimates/${side}`,
+                    {
+                        method: 'PUT',
+                        credentials: 'same-origin',
+                        headers: {
+                            Accept: 'application/json',
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': csrf_token,
+                        },
+                        body: JSON.stringify(sourceEstimate),
+                    },
+                );
+                const payload = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        Object.values(payload.errors ?? {})
+                            .flat()
+                            .join(' ') ||
+                            payload.message ||
+                            'Unable to save estimate changes.',
+                    );
+                }
+
+                sourceEstimate = payload.estimate as Estimate;
+                const savedKey = estimateDraftKey(sourceEstimate);
+                const savedEstimate = sourceEstimate;
+                setEstimates((current) => ({
+                    ...current,
+                    [side]: savedEstimate,
+                }));
+                setSavedEstimateKeys((current) => ({
+                    ...current,
+                    [side]: savedKey,
+                }));
+                notifyParentOfSave();
+            }
+
+            const document = {
+                backups: (sourceEstimate.backups ?? []).map(
+                    ({
+                        key,
+                        owner_type,
+                        owner_uuid,
+                        name,
+                        schema_version,
+                        definition,
+                    }) => ({
+                        key,
+                        owner_type,
+                        owner_uuid,
+                        name,
+                        schema_version,
+                        definition,
+                    }),
+                ),
+                bindings: [
+                    ...(
+                        sourceEstimate.backup_applied?.document.bindings ?? []
+                    ).filter(
+                        (b) =>
+                            !(
+                                b.kind === kind &&
+                                b.field === field &&
+                                b.row_uuid === uuid
+                            ),
+                    ),
+                    ...(formula
+                        ? [{ kind, field, row_uuid: uuid, formula }]
+                        : []),
+                ],
+            };
+
             // Preserve saved drafts; the user must apply them deliberately in the backup editor.
             if (
-                stableJson(documentFor(estimate)) !==
+                stableJson(documentFor(sourceEstimate)) !==
                 stableJson(
-                    estimate.backup_applied?.document ?? {
+                    sourceEstimate.backup_applied?.document ?? {
                         backups: [],
                         bindings: [],
                     },
@@ -360,7 +425,7 @@ export default function DupaEdit({
                             'X-CSRF-TOKEN': csrf_token,
                         },
                         body: JSON.stringify({
-                            revision: estimate.backup_revision ?? 0,
+                            revision: sourceEstimate.backup_revision ?? 0,
                             document,
                             preview_token: token,
                         }),
@@ -382,16 +447,22 @@ export default function DupaEdit({
             };
             const preview = await post('preview');
             const saved = await post('apply', preview.preview_token);
-            const next = saved.estimate as Estimate;
-
-            if (manualValue !== undefined && kind === 'labors') {
-                next.labors = next.labors.map((row) =>
-                    row.row_uuid === uuid
-                        ? { ...row, no_of_days: manualValue }
-                        : row,
-                );
-                setDirty((current) => ({ ...current, [side]: true }));
-            }
+            const savedEstimate = saved.estimate as Estimate;
+            setSavedEstimateKeys((current) => ({
+                ...current,
+                [side]: estimateDraftKey(savedEstimate),
+            }));
+            const next =
+                manualValue !== undefined && kind === 'labors'
+                    ? {
+                          ...savedEstimate,
+                          labors: savedEstimate.labors.map((row) =>
+                              row.row_uuid === uuid
+                                  ? { ...row, no_of_days: manualValue }
+                                  : row,
+                          ),
+                      }
+                    : savedEstimate;
 
             setEstimates((current) => ({ ...current, [side]: next }));
             notifyParentOfSave();
@@ -411,8 +482,46 @@ export default function DupaEdit({
         }
     }
     const setEstimate = (next: Estimate) => {
+        next = {
+            ...next,
+            labors: next.labors.map((row) => ({
+                ...row,
+                row_uuid: row.row_uuid ?? crypto.randomUUID(),
+            })),
+            equipment: next.equipment.map((row) => ({
+                ...row,
+                row_uuid: row.row_uuid ?? crypto.randomUUID(),
+            })),
+            items: next.items.map((row) => ({
+                ...row,
+                row_uuid: row.row_uuid ?? crypto.randomUUID(),
+            })),
+        };
+        next = {
+            ...next,
+            labors: next.labors.map((row) => {
+                const binding = next.backup_applied?.document.bindings.find(
+                    (b) =>
+                        b.kind === 'labors' &&
+                        b.field === 'no_of_days' &&
+                        b.row_uuid === row.row_uuid,
+                );
+                const auto = parseLaborDaysFormula(binding?.formula);
+
+                if (!auto) {
+                    return row;
+                }
+
+                const days = laborDays(
+                    next.backup_applied?.values?.[auto.source] ?? NaN,
+                    auto.productivity,
+                    Number(row.no_of_person),
+                );
+
+                return days === null ? row : { ...row, no_of_days: days };
+            }),
+        };
         setEstimates({ ...estimates, [side]: next });
-        setDirty({ ...dirty, [side]: true });
     };
     const setItemDraft = (next: ItemDraft) =>
         setItemDrafts({ ...itemDrafts, [side]: next });
@@ -503,9 +612,15 @@ export default function DupaEdit({
             },
             onSuccess: (page) => {
                 const updated = (page.props as unknown as Props).dupa.estimates;
-                setEstimates(updated);
+                setEstimates((current) => ({
+                    ...current,
+                    [side]: updated[side],
+                }));
                 notifyParentOfSave();
-                setDirty((current) => ({ ...current, [side]: false }));
+                setSavedEstimateKeys((current) => ({
+                    ...current,
+                    [side]: estimateDraftKey(updated[side]),
+                }));
                 setSaving(false);
 
                 if (nextId) {
@@ -586,9 +701,13 @@ export default function DupaEdit({
             {
                 preserveScroll: true,
                 onSuccess: (page) => {
-                    setEstimates(
-                        (page.props as unknown as Props).dupa.estimates,
-                    );
+                    const updated = (page.props as unknown as Props).dupa
+                        .estimates;
+                    setEstimates(updated);
+                    setSavedEstimateKeys({
+                        ADD: estimateDraftKey(updated.ADD),
+                        NON_ADD: estimateDraftKey(updated.NON_ADD),
+                    });
                     setSide('NON_ADD');
                     notifyParentOfSave();
                 },
@@ -863,6 +982,10 @@ export default function DupaEdit({
                                 onDirty={setBackupDirty}
                                 onBusy={setSaving}
                                 onSaved={(next) => {
+                                    setSavedEstimateKeys((current) => ({
+                                        ...current,
+                                        [side]: estimateDraftKey(next),
+                                    }));
                                     setEstimates((current) => ({
                                         ...current,
                                         [side]: next,
@@ -1043,6 +1166,43 @@ export default function DupaEdit({
                                         <BackupDaysCell
                                             key={`${side}-${row.row_uuid ?? index}`}
                                             label={`Number of days for labor row ${index + 1}`}
+                                            autoCompute={{
+                                                persons: row.no_of_person,
+                                                formula:
+                                                    estimate.backup_applied?.document.bindings.find(
+                                                        (b) =>
+                                                            b.kind ===
+                                                                'labors' &&
+                                                            b.field ===
+                                                                'no_of_days' &&
+                                                            b.row_uuid ===
+                                                                row.row_uuid,
+                                                    )?.formula,
+                                                sources: (
+                                                    estimate.backups ?? []
+                                                ).flatMap((b) =>
+                                                    b.definition.outputs.map(
+                                                        (o) => ({
+                                                            value: `=${b.key}.outputs.${o.key}`,
+                                                            label: `${b.name} / ${o.label}`,
+                                                        }),
+                                                    ),
+                                                ),
+                                                values:
+                                                    estimate.backup_applied
+                                                        ?.values ?? {},
+                                                disabled:
+                                                    saving ||
+                                                    backupDirty ||
+                                                    !row.row_uuid,
+                                                onApply: (formula) =>
+                                                    switchResult(
+                                                        'labors',
+                                                        'no_of_days',
+                                                        row.row_uuid!,
+                                                        formula,
+                                                    ),
+                                            }}
                                             value={row.no_of_days}
                                             formula={
                                                 estimate.backup_applied?.document.bindings.find(
@@ -1066,7 +1226,8 @@ export default function DupaEdit({
                                             )}
                                             disabled={saving}
                                             canLink={
-                                                !dirty[side] &&
+                                                !saving &&
+                                                !backupDirty &&
                                                 Boolean(row.row_uuid)
                                             }
                                             onResult={(formula) =>

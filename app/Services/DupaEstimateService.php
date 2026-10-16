@@ -309,6 +309,8 @@ class DupaEstimateService
     public function projectTotals(Project $project): array
     {
         $this->ensureProjectSettings($project);
+        // POL is a single project charge; carry it once in the combined totals.
+        $projectPol = (float) ($project->pol ?? $project->estimateSettings()->where('estimate_type', 'ADD')->value('pol_amount'));
         $result = [];
         foreach (['ADD', 'NON_ADD'] as $type) {
             $settings = $project->estimateSettings()->where('estimate_type', $type)->firstOrFail();
@@ -320,11 +322,12 @@ class DupaEstimateService
                 ->selectRaw('COALESCE(SUM(amount * multiplier), 0) as aggregate')->value('aggregate'), 2);
             $preEngineering = round($direct * ($settings->pre_engineering_percentage / 100), 2);
             $supervision = round($direct * ($settings->supervision_percentage / 100), 2);
-            $charges = round($settings->pol_amount + $settings->contingencies_amount + $preEngineering + $supervision + $miscellaneous, 2);
+            $pol = $type === 'ADD' ? $projectPol : 0.0;
+            $charges = round($pol + $settings->contingencies_amount + $preEngineering + $supervision + $miscellaneous, 2);
             $result[$type] = [
                 'direct_cost' => $direct,
                 'dupa_total' => $dupaTotal,
-                'pol_amount' => (float) $settings->pol_amount,
+                'pol_amount' => $pol,
                 'pre_engineering_amount' => $preEngineering,
                 'supervision_amount' => $supervision,
                 'contingencies_amount' => (float) $settings->contingencies_amount,

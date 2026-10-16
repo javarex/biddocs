@@ -24,8 +24,6 @@ class BackupTemplateController extends Controller
             ->selectRaw('excluded_templates.id IS NOT NULL AS is_excluded')
             ->leftJoin('excluded_templates', fn ($join) => $join->on('excluded_templates.template_id', '=', 'dupa_backup_templates.id')->where('excluded_templates.user_id', $user->id))
             ->with(['creator:id,name', 'project:id,project_code,project_name'])
-            ->when(! $user->is_super_admin, fn ($query) => $query->whereHas('project', fn ($project) => $project->where('created_by', $user->id)
-                ->orWhereHas('importHistories', fn ($imports) => $imports->where('imported_by', $user->id)->whereIn('status', ['completed', 'completed_with_errors']))))
             ->when($status === 'active', fn ($query) => $query->whereNull('excluded_templates.id'))
             ->when($status === 'hidden', fn ($query) => $query->whereNotNull('excluded_templates.id'))
             ->when($search !== '', fn ($query) => $query->where(fn ($query) => $query->where('dupa_backup_templates.name', 'like', "%{$search}%")
@@ -40,7 +38,7 @@ class BackupTemplateController extends Controller
 
     public function visibility(Request $request, DupaBackupTemplate $template): RedirectResponse
     {
-        Gate::authorize('update', $template->project);
+        Gate::authorize('projects.update');
         $data = $request->validate(['excluded' => ['required', 'boolean']]);
         $template->setExcludedFor($request->user()->id, $data['excluded']);
 

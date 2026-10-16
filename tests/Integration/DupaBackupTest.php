@@ -350,7 +350,7 @@ class DupaBackupTest extends TestCase
         $this->post("/admin/backup-templates/{$template->id}/visibility", ['excluded' => false])->assertForbidden();
     }
 
-    public function test_template_management_is_scoped_to_projects_the_editor_owns(): void
+    public function test_templates_are_shared_across_projects_with_per_user_visibility(): void
     {
         $this->postJson($this->url('template'), $this->payload() + ['template_name' => 'Owned template', 'template_key' => 'excavation'])->assertOk();
         $template = DupaBackupTemplate::sole();
@@ -362,11 +362,37 @@ class DupaBackupTest extends TestCase
         $this->dupa->section->project->update(['created_by' => $editor->id]);
         $otherProject = Project::create(['project_name' => 'Other project', 'location' => 'Other', 'contract_duration' => 1]);
         $foreign = DupaBackupTemplate::create(['project_id' => $otherProject->id, 'name' => 'Other template', 'version' => 1, 'definition' => $template->definition]);
-        $this->actingAs($editor)->get('/admin/backup-templates')->assertOk()->assertInertia(fn (Assert $page) => $page->has('templates.data', 1)->where('templates.data.0.id', $template->id));
-        $this->get('/admin/backup-templates?search=Other')->assertOk()->assertInertia(fn (Assert $page) => $page->has('templates.data', 0));
-        $this->post("/admin/backup-templates/{$foreign->id}/visibility", ['excluded' => true])->assertForbidden();
-        $this->assertDatabaseMissing('excluded_templates', ['template_id' => $foreign->id, 'user_id' => $editor->id]);
+        $this->actingAs($editor)->get('/admin/backup-templates')->assertOk()->assertInertia(fn (Assert $page) => $page->has('templates.data', 2));
+        $this->get('/admin/backup-templates?search=Other')->assertOk()->assertInertia(fn (Assert $page) => $page->has('templates.data', 1)->where('templates.data.0.id', $foreign->id));
+        $this->get("/admin/dupas/{$this->dupa->id}/edit")->assertOk()->assertInertia(fn (Assert $page) => $page->has('backupTemplates', 3));
+        $original = $foreign->getAttributes();
+        $this->postJson("/admin/dupas/{$this->dupa->id}/backup-templates/{$foreign->id}/exclusion", ['excluded' => true])->assertOk();
+        $this->assertDatabaseHas('excluded_templates', ['template_id' => $foreign->id, 'user_id' => $editor->id]);
+        $this->get("/admin/dupas/{$this->dupa->id}/edit")->assertOk()->assertInertia(fn (Assert $page) => $page->has('backupTemplates', 2));
+        $this->post("/admin/backup-templates/{$foreign->id}/visibility", ['excluded' => false])->assertRedirect();
+        $this->get("/admin/dupas/{$this->dupa->id}/edit")->assertOk()->assertInertia(fn (Assert $page) => $page->has('backupTemplates', 3));
+        $this->assertSame($original, $foreign->fresh()->getAttributes());
         $this->post("/admin/backup-templates/{$template->id}/visibility", ['excluded' => true])->assertRedirect();
         $this->assertDatabaseHas('excluded_templates', ['template_id' => $template->id, 'user_id' => $editor->id]);
+    }
+
+    public function test_json_estimate_save_returns_persisted_rows_ready_for_result_linking(): void
+    {
+        $estimate = $this->estimate->fresh(['labors', 'equipment', 'items'])->toArray();
+        $newRow = $estimate['labors'][0];
+        $newRow['row_uuid'] = (string) Str::uuid();
+        $newRow['no_of_person'] = 5;
+        $estimate['labors'][] = $newRow;
+        $response = $this->putJson("/admin/dupas/{$this->dupa->id}/estimates/ADD", $estimate)
+            ->assertOk()->assertJsonCount(2, 'estimate.labors')->assertJsonPath('estimate.estimate_type', 'ADD');
+        $saved = $response->json('estimate');
+        $this->assertContains($newRow['row_uuid'], array_column($saved['labors'], 'row_uuid'));
+        $this->assertCount(0, $saved['backups']);
+        $this->document['bindings'][] = ['kind' => 'labors', 'row_uuid' => $newRow['row_uuid'], 'field' => 'no_of_days', 'formula' => '=excavation.outputs.labor_days'];
+        $payload = $this->payload();
+        $payload['revision'] = $saved['backup_revision'];
+        $token = $this->postJson($this->url('preview'), $payload)->assertOk()->json('preview_token');
+        $this->postJson($this->url('apply'), $payload + ['preview_token' => $token])->assertOk();
+        $this->assertSame(11.0, $this->estimate->fresh()->labors()->where('row_uuid', $newRow['row_uuid'])->firstOrFail()->no_of_days);
     }
 }

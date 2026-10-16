@@ -12,6 +12,7 @@ use App\Models\Project;
 use App\Models\ProjectItem;
 use App\Services\Backup\ExcavationTemplate;
 use App\Services\DupaEstimateService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -61,7 +62,7 @@ class ProjectEstimateController extends Controller
             [
                 'backupTemplates' => array_merge(
                     [['id' => 0, 'name' => '803 (1)a Structure Excavation (ADD example)', 'version' => 1, 'creator' => ['name' => 'Workbook example'], 'definition' => ExcavationTemplate::definition()]],
-                    DupaBackupTemplate::query()->where('project_id', $project->id)->visibleTo($request->user()->id)->with('creator:id,name')->orderBy('name')->get()->toArray(),
+                    DupaBackupTemplate::query()->visibleTo($request->user()->id)->with('creator:id,name')->orderBy('name')->get()->toArray(),
                 ),
                 'embedded' => $request->boolean('embedded'),
                 'project' => $project->only(['id', 'project_code', 'project_name']),
@@ -118,7 +119,7 @@ class ProjectEstimateController extends Controller
         return back()->with('success', 'DUPA details updated.');
     }
 
-    public function updateEstimate(Request $request, ProjectItem $dupa, string $type): RedirectResponse
+    public function updateEstimate(Request $request, ProjectItem $dupa, string $type): RedirectResponse|JsonResponse
     {
         abort_unless(in_array($type, ['ADD', 'NON_ADD'], true), 404);
         Gate::authorize('update', $dupa->section->project);
@@ -161,6 +162,10 @@ class ProjectEstimateController extends Controller
             $this->estimates->save($dupa, $type, $data);
         });
 
+        if ($request->expectsJson()) {
+            return response()->json(['estimate' => $dupa->estimates()->where('estimate_type', $type)->firstOrFail()->load(['labors', 'equipment', 'items', 'backups'])]);
+        }
+
         return back()->with('success', "{$type} estimate updated.");
     }
 
@@ -177,6 +182,7 @@ class ProjectEstimateController extends Controller
     {
         Gate::authorize('update', $project);
         $data = $request->validate([
+            'pol' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'settings' => ['required', 'array:ADD,NON_ADD'],
             'settings.*' => ['required', 'array:pol_amount,pre_engineering_percentage,supervision_percentage,contingencies_amount'],
             'settings.*.pol_amount' => ['required', 'numeric', 'min:0'],
@@ -194,11 +200,13 @@ class ProjectEstimateController extends Controller
 
         DB::transaction(function () use ($project, $data): void {
             $this->estimates->ensureProjectSettings($project);
+            $pol = $data['pol'] ?? $data['settings']['ADD']['pol_amount'];
             foreach ($data['settings'] as $type => $settings) {
+                $settings['pol_amount'] = $type === 'ADD' ? $pol : 0;
                 $project->estimateSettings()->where('estimate_type', $type)->update($settings);
             }
             $project->update([
-                'pol' => $data['settings']['ADD']['pol_amount'],
+                'pol' => $pol,
                 'contingencies' => $data['settings']['ADD']['contingencies_amount'],
                 'estimates_updated_at' => now(),
             ]);

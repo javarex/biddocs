@@ -1,8 +1,10 @@
 import { useForm } from '@inertiajs/react';
-import { ChevronDown, Plus } from 'lucide-react';
+import { ClipboardList, Plus, Users } from 'lucide-react';
 import type { FormEvent } from 'react';
 import { useState } from 'react';
+import AutoRowTextarea from '@/components/auto-row-textarea';
 import InputError from '@/components/input-error';
+import type { MiscellaneousRow } from '@/components/miscellaneous-inputs';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -37,6 +39,7 @@ export type SignatorySystemUser = {
     is_active: boolean;
 };
 export type ProjectFields = {
+    miscellaneous?: MiscellaneousRow[];
     id?: number;
     project_code: string | null;
     project_name: string;
@@ -61,6 +64,7 @@ export type ProjectFields = {
 };
 
 const emptyProject: ProjectFields = {
+    miscellaneous: [],
     project_code: '',
     project_name: '',
     project_description: '',
@@ -87,8 +91,8 @@ const signatoryFields: Array<[keyof ProjectFields, string]> = [
     ['prepared_by', 'Prepared by'],
     ['checked_by', 'Checked by'],
     ['recommending_approval', 'Recommending approval'],
-    ['included_in_aip', 'Included in AIP'],
     ['recommending_approval_pao', 'Recommending approval (PAO)'],
+    ['included_in_aip', 'Included in AIP'],
     ['approved_by', 'Approved by'],
 ];
 
@@ -102,6 +106,9 @@ const categoryOptions: Record<ProjectType, string[]> = {
 
 export default function ProjectForm({
     project,
+    worksheet = false,
+    activePanel,
+    onPanelChange,
     signatories,
     signatoryDefaults,
     canCreateSignatories,
@@ -110,6 +117,9 @@ export default function ProjectForm({
     signatorySystemUsers,
 }: {
     project?: ProjectFields;
+    worksheet?: boolean;
+    activePanel?: 'details' | 'signatories';
+    onPanelChange?: (panel: 'details' | 'signatories') => void;
     signatories: Signatory[];
     signatoryDefaults: Partial<ProjectFields>;
     canCreateSignatories: boolean;
@@ -120,10 +130,14 @@ export default function ProjectForm({
     const currentUserPreparer = signatories.find(
         (person) => person.is_current_user,
     );
-    const [additionalOpen, setAdditionalOpen] = useState(Boolean(project?.id));
-    const [signatoriesOpen, setSignatoriesOpen] = useState(
-        Boolean(project?.id),
+    const [localPanel, setLocalPanel] = useState<'details' | 'signatories'>(
+        'details',
     );
+    const panel = activePanel ?? localPanel;
+    const changePanel = (next: 'details' | 'signatories') => {
+        setLocalPanel(next);
+        onPanelChange?.(next);
+    };
     const [addSignatoryOpen, setAddSignatoryOpen] = useState(false);
     const form = useForm<ProjectFields>(
         project
@@ -165,21 +179,11 @@ export default function ProjectForm({
         const fieldsWithErrors = Object.keys(errors);
 
         if (
-            fieldsWithErrors.some((name) =>
-                [
-                    'source_of_funds',
-                    'allotment_class',
-                    'pol',
-                    'contingencies',
-                    'type_of_projects',
-                    'category',
-                    'implementation_scheme',
-                    'floor_area',
-                    'dimension',
-                ].includes(name),
+            fieldsWithErrors.some(
+                (name) => !signatoryFields.some(([field]) => field === name),
             )
         ) {
-            setAdditionalOpen(true);
+            changePanel('details');
         }
 
         if (
@@ -187,11 +191,25 @@ export default function ProjectForm({
                 fieldsWithErrors.includes(String(name)),
             )
         ) {
-            setSignatoriesOpen(true);
+            changePanel('signatories');
         }
     };
     const submit = (event: FormEvent) => {
         event.preventDefault();
+
+        form.transform((data) =>
+            Object.fromEntries(
+                Object.entries(data).filter(
+                    ([key]) =>
+                        ![
+                            'project_code',
+                            'pol',
+                            'contingencies',
+                            'miscellaneous',
+                        ].includes(key),
+                ),
+            ),
+        );
 
         if (project?.id) {
             form.put(`/admin/projects/${project.id}`, {
@@ -220,443 +238,699 @@ export default function ProjectForm({
         </div>
     );
 
-    return (
-        <>
-            <form
-                className="space-y-3 [&_[data-slot=card-content]]:px-4 [&_[data-slot=card-header]]:px-4 [&_[data-slot=card]]:gap-3 [&_[data-slot=card]]:py-4 [&_[data-slot=input]]:h-8 [&_button]:h-8 [&_select]:h-8"
-                onSubmit={submit}
-            >
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Project information</CardTitle>
-                    </CardHeader>
-                    <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                        {field(
-                            'project_code',
-                            'Project code (optional)',
-                            'text',
-                            'xl:col-span-1',
-                        )}
-                        {field(
-                            'project_name',
-                            'Project name',
-                            'text',
-                            'xl:col-span-5',
-                        )}
-                        {field(
-                            'contract_duration',
-                            'Contract duration (days)',
-                            'number',
-                            'xl:col-span-1',
-                        )}
-                        {field('location', 'Location', 'text', 'xl:col-span-5')}
-                        <div className="space-y-1 md:col-span-2 xl:col-span-6">
-                            <Label htmlFor="project_description">
-                                Project description
-                            </Label>
-                            <textarea
-                                id="project_description"
-                                className="min-h-16 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
-                                value={form.data.project_description ?? ''}
-                                onChange={(event) =>
+    const typeControl = (
+        <div className="space-y-2">
+            <Label>4. Type of project</Label>
+            <div className="flex flex-wrap gap-1">
+                {projectTypes.map((type) => (
+                    <label
+                        key={type}
+                        className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm ${selectedType === type ? 'border-primary bg-primary/5' : ''}`}
+                    >
+                        <input
+                            type="checkbox"
+                            className="size-4"
+                            checked={selectedType === type}
+                            onChange={() =>
+                                form.setData({
+                                    ...form.data,
+                                    type_of_projects:
+                                        selectedType === type ? '' : type,
+                                    category: '',
+                                })
+                            }
+                        />
+                        {type}
+                    </label>
+                ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+                Select one project type.
+            </p>
+            <InputError message={form.errors.type_of_projects} />
+        </div>
+    );
+    const categoryControl = (
+        <div className="space-y-2">
+            <Label>6. Category</Label>
+            {!selectedType ? (
+                <p className="text-sm text-muted-foreground">
+                    Select a project type to view its categories.
+                </p>
+            ) : (
+                <div className="flex flex-wrap gap-1">
+                    {availableCategories.map((category) => (
+                        <label
+                            key={category}
+                            className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm ${selectedCategory === category ? 'border-primary bg-primary/5' : ''}`}
+                        >
+                            <input
+                                type="checkbox"
+                                className="size-4"
+                                checked={selectedCategory === category}
+                                onChange={() =>
                                     form.setData(
-                                        'project_description',
-                                        event.target.value,
+                                        'category',
+                                        selectedCategory === category
+                                            ? ''
+                                            : category,
                                     )
                                 }
                             />
-                            <InputError
-                                message={form.errors.project_description}
-                            />
-                        </div>
-                    </CardContent>
-                </Card>
-                <div
-                    className={
-                        project?.id
-                            ? 'grid items-stretch gap-3 xl:grid-cols-2'
-                            : 'space-y-3'
-                    }
-                >
-                    <Card className="h-full !gap-0 overflow-hidden !py-0">
-                        <details
-                            className="group grid h-full open:grid-rows-[auto_1fr]"
-                            open={additionalOpen}
-                            onToggle={(event) =>
-                                setAdditionalOpen(event.currentTarget.open)
+                            {category}
+                        </label>
+                    ))}
+                    <label
+                        className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm ${isOtherCategory ? 'border-primary bg-primary/5' : ''}`}
+                    >
+                        <input
+                            type="checkbox"
+                            className="size-4"
+                            checked={isOtherCategory}
+                            onChange={() =>
+                                form.setData(
+                                    'category',
+                                    isOtherCategory ? '' : 'Others: ',
+                                )
                             }
-                        >
-                            <summary className="flex min-h-20 cursor-pointer list-none items-center justify-between gap-3 bg-muted/30 px-4 py-3 marker:hidden">
-                                <div>
-                                    <div className="font-semibold">
-                                        Additional project information
+                        />
+                        Others (specify)
+                    </label>
+                </div>
+            )}
+            {selectedType && isOtherCategory && (
+                <Input
+                    aria-label="Specify other project category"
+                    placeholder="Specify category"
+                    value={specifiedCategory}
+                    onChange={(event) =>
+                        form.setData(
+                            'category',
+                            `Others: ${event.target.value}`,
+                        )
+                    }
+                />
+            )}
+            <InputError message={form.errors.category} />
+        </div>
+    );
+    const allotmentControl = (
+        <div className="space-y-1">
+            <Label htmlFor="allotment_class">8.1. Allotment class</Label>
+            <select
+                id="allotment_class"
+                className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                value={form.data.allotment_class ?? ''}
+                onChange={(event) =>
+                    form.setData('allotment_class', event.target.value)
+                }
+            >
+                <option value="">Select allotment class</option>
+                <option value="Trust Fund">Trust Fund</option>
+                <option value="General Fund">General Fund</option>
+            </select>
+            <InputError message={form.errors.allotment_class} />
+        </div>
+    );
+    const schemeControl = (
+        <div className="space-y-1">
+            <Label htmlFor="implementation_scheme">
+                9. Implementation scheme
+            </Label>
+            <select
+                id="implementation_scheme"
+                className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                value={form.data.implementation_scheme ?? ''}
+                onChange={(event) =>
+                    form.setData('implementation_scheme', event.target.value)
+                }
+            >
+                <option value="">Select scheme</option>
+                <option value="Administration">Administration</option>
+                <option value="contract">Contract</option>
+            </select>
+            <InputError message={form.errors.implementation_scheme} />
+        </div>
+    );
+
+    return (
+        <>
+            <form
+                className="space-y-3 [&_[data-slot=card-content]]:px-3 [&_[data-slot=card-header]]:px-3 [&_[data-slot=card-title]]:text-sm [&_[data-slot=card]]:gap-2 [&_[data-slot=card]]:rounded-lg [&_[data-slot=card]]:py-3 [&_[data-slot=card]]:shadow-none [&_[data-slot=input]]:h-8 [&_[data-slot=label]]:text-xs [&_[data-slot=label]]:text-muted-foreground [&_button]:h-8 [&_select]:h-8"
+                onSubmit={submit}
+            >
+                {activePanel === undefined && (
+                    <nav
+                        className="flex gap-1 rounded-lg border bg-card p-1"
+                        aria-label="Project form tabs"
+                    >
+                        {(['details', 'signatories'] as const).map((value) => (
+                            <Button
+                                type="button"
+                                key={value}
+                                variant={panel === value ? 'default' : 'ghost'}
+                                onClick={() => changePanel(value)}
+                            >
+                                {value === 'details'
+                                    ? 'Project details'
+                                    : 'Signatories'}
+                            </Button>
+                        ))}
+                    </nav>
+                )}
+                <div className={panel === 'details' ? 'space-y-3' : 'hidden'}>
+                    <div className="min-w-0 space-y-3">
+                        {worksheet ? (
+                            <div className="overflow-x-auto rounded-lg border bg-white text-slate-950 shadow-sm">
+                                <div className="min-w-[900px] p-4 [&_input]:h-8 [&_input]:text-slate-950 [&_input:not([type=checkbox])]:rounded-none [&_input:not([type=checkbox])]:border-0 [&_input:not([type=checkbox])]:bg-transparent [&_input:not([type=checkbox])]:px-0 [&_input:not([type=checkbox])]:shadow-none [&_input:not([type=checkbox])]:focus-visible:ring-1 [&_input:not([type=checkbox])]:focus-visible:ring-emerald-600 [&_input:not([type=checkbox])]:focus-visible:ring-inset [&_label]:text-slate-700 [&_select]:h-8 [&_select]:rounded-none [&_select]:border-0 [&_select]:bg-transparent [&_select]:px-0 [&_select]:text-slate-950 [&_select]:shadow-none [&_select]:focus-visible:outline-1 [&_select]:focus-visible:outline-emerald-600 [&_textarea]:rounded-none [&_textarea]:border-0 [&_textarea]:bg-transparent [&_textarea]:px-0 [&_textarea]:text-slate-950 [&_textarea]:shadow-none [&_textarea]:focus-visible:outline-1 [&_textarea]:focus-visible:outline-emerald-600">
+                                    <div className="border border-slate-400 py-3 text-center text-base font-bold">
+                                        SUMMARY OF ESTIMATED COST
                                     </div>
-                                    <div className="text-sm text-muted-foreground">
-                                        Funding, classification, dimensions, and
-                                        initial ADD charges.
+                                    <div className="grid grid-cols-[2fr_1fr_1fr] text-sm [&>div]:border [&>div]:border-slate-400 [&>div]:px-2 [&>div]:py-1.5">
+                                        <div>
+                                            {field(
+                                                'project_name',
+                                                '2.) Name of Project:',
+                                            )}
+                                        </div>
+                                        <div>
+                                            {field('location', '3.) Location:')}
+                                        </div>
+                                        <div>{typeControl}</div>
+                                        <div className="col-span-1 space-y-1">
+                                            <Label htmlFor="project_description">
+                                                5.) Project Description:
+                                            </Label>
+                                            <AutoRowTextarea
+                                                id="project_description"
+                                                className="w-full rounded-md border px-3 py-2 text-sm"
+                                                value={
+                                                    form.data
+                                                        .project_description ??
+                                                    ''
+                                                }
+                                                onChange={(e) =>
+                                                    form.setData(
+                                                        'project_description',
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
+                                            <InputError
+                                                message={
+                                                    form.errors
+                                                        .project_description
+                                                }
+                                            />
+                                        </div>
+                                        <div className="col-span-2">
+                                            {categoryControl}
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="dimension">
+                                                5.1) Dimension:
+                                            </Label>
+                                            <AutoRowTextarea
+                                                id="dimension"
+                                                className="w-full rounded-md border px-3 py-2 text-sm"
+                                                value={
+                                                    form.data.dimension ?? ''
+                                                }
+                                                onChange={(e) =>
+                                                    form.setData(
+                                                        'dimension',
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
+                                            <InputError
+                                                message={form.errors.dimension}
+                                            />
+                                        </div>
+                                        <div className="col-span-2">
+                                            {field(
+                                                'source_of_funds',
+                                                '8.) Source of Funds:',
+                                            )}
+                                        </div>
+                                        <div>
+                                            {field(
+                                                'floor_area',
+                                                '5.2) Floor Area:',
+                                            )}
+                                        </div>
+                                        <div className="col-span-2">
+                                            {allotmentControl}
+                                        </div>
+                                        <div>
+                                            {field(
+                                                'contract_duration',
+                                                '7.) Calendar days to Complete:',
+                                                'number',
+                                            )}
+                                        </div>
+                                        <div className="col-span-2">
+                                            {schemeControl}
+                                        </div>
                                     </div>
                                 </div>
-                                <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-                            </summary>
-                            <CardContent className="grid content-start gap-3 border-t py-4 md:grid-cols-2">
-                                {field('source_of_funds', 'Source of funds')}
-                                <div className="space-y-1">
-                                    <Label htmlFor="allotment_class">
-                                        Allotment class
-                                    </Label>
-                                    <select
-                                        id="allotment_class"
-                                        className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                                        value={form.data.allotment_class ?? ''}
-                                        onChange={(event) =>
-                                            form.setData(
-                                                'allotment_class',
-                                                event.target.value,
-                                            )
-                                        }
-                                    >
-                                        <option value="">
-                                            Select allotment class
-                                        </option>
-                                        <option value="Trust Fund">
-                                            Trust Fund
-                                        </option>
-                                        <option value="General Fund">
-                                            General Fund
-                                        </option>
-                                    </select>
-                                    <InputError
-                                        message={form.errors.allotment_class}
-                                    />
-                                </div>
-                                {field('pol', 'ADD POL amount', 'number')}
-                                {field(
-                                    'contingencies',
-                                    'ADD contingencies amount',
-                                    'number',
-                                )}
-                                <div className="space-y-2">
-                                    <Label>Type of project</Label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {projectTypes.map((type) => (
-                                            <label
-                                                key={type}
-                                                className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm ${selectedType === type ? 'border-primary bg-primary/5' : ''}`}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    className="size-4"
-                                                    checked={
-                                                        selectedType === type
-                                                    }
-                                                    onChange={() =>
-                                                        form.setData({
-                                                            ...form.data,
-                                                            type_of_projects:
-                                                                selectedType ===
-                                                                type
-                                                                    ? ''
-                                                                    : type,
-                                                            category: '',
-                                                        })
-                                                    }
-                                                />
-                                                {type}
-                                            </label>
-                                        ))}
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                        Select one project type.
-                                    </p>
-                                    <InputError
-                                        message={form.errors.type_of_projects}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Category</Label>
-                                    {!selectedType ? (
-                                        <p className="text-sm text-muted-foreground">
-                                            Select a project type to view its
-                                            categories.
-                                        </p>
-                                    ) : (
-                                        <div className="flex flex-wrap gap-2">
-                                            {availableCategories.map(
-                                                (category) => (
+                            </div>
+                        ) : (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <ClipboardList
+                                            className="size-4 text-primary"
+                                            aria-hidden="true"
+                                        />
+                                        Project information
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-2">
+                                    <div className="grid items-start gap-2 xl:grid-cols-[1.5fr_1fr_1fr]">
+                                        {field(
+                                            'project_name',
+                                            '2. Name of project',
+                                        )}
+                                        {field('location', '3. Location')}
+                                        <div className="space-y-2">
+                                            <Label>4. Type of project</Label>
+                                            <div className="flex flex-wrap gap-1">
+                                                {projectTypes.map((type) => (
                                                     <label
-                                                        key={category}
-                                                        className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm ${selectedCategory === category ? 'border-primary bg-primary/5' : ''}`}
+                                                        key={type}
+                                                        className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm ${selectedType === type ? 'border-primary bg-primary/5' : ''}`}
                                                     >
                                                         <input
                                                             type="checkbox"
                                                             className="size-4"
                                                             checked={
-                                                                selectedCategory ===
-                                                                category
+                                                                selectedType ===
+                                                                type
                                                             }
                                                             onChange={() =>
-                                                                form.setData(
-                                                                    'category',
-                                                                    selectedCategory ===
-                                                                        category
-                                                                        ? ''
-                                                                        : category,
-                                                                )
+                                                                form.setData({
+                                                                    ...form.data,
+                                                                    type_of_projects:
+                                                                        selectedType ===
+                                                                        type
+                                                                            ? ''
+                                                                            : type,
+                                                                    category:
+                                                                        '',
+                                                                })
                                                             }
                                                         />
-                                                        {category}
+                                                        {type}
                                                     </label>
-                                                ),
-                                            )}
-                                            <label
-                                                className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm ${isOtherCategory ? 'border-primary bg-primary/5' : ''}`}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    className="size-4"
-                                                    checked={isOtherCategory}
-                                                    onChange={() =>
+                                                ))}
+                                            </div>
+                                            <p className="text-xs text-muted-foreground">
+                                                Select one project type.
+                                            </p>
+                                            <InputError
+                                                message={
+                                                    form.errors.type_of_projects
+                                                }
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="grid items-start gap-3 border-t pt-2 xl:grid-cols-[1.3fr_1fr]">
+                                        <div className="order-1 space-y-2 xl:order-none">
+                                            <div className="space-y-1">
+                                                <Label htmlFor="project_description">
+                                                    5. Project description
+                                                </Label>
+                                                <AutoRowTextarea
+                                                    id="project_description"
+                                                    className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+                                                    value={
+                                                        form.data
+                                                            .project_description ??
+                                                        ''
+                                                    }
+                                                    onChange={(event) =>
                                                         form.setData(
-                                                            'category',
-                                                            isOtherCategory
-                                                                ? ''
-                                                                : 'Others: ',
+                                                            'project_description',
+                                                            event.target.value,
                                                         )
                                                     }
                                                 />
-                                                Others (specify)
-                                            </label>
+                                                <InputError
+                                                    message={
+                                                        form.errors
+                                                            .project_description
+                                                    }
+                                                />
+                                            </div>
+
+                                            <div className="grid gap-2">
+                                                <div className="space-y-1">
+                                                    <Label htmlFor="dimension">
+                                                        5.1. Dimensions
+                                                    </Label>
+                                                    <AutoRowTextarea
+                                                        id="dimension"
+                                                        className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+                                                        value={
+                                                            form.data
+                                                                .dimension ?? ''
+                                                        }
+                                                        onChange={(event) =>
+                                                            form.setData(
+                                                                'dimension',
+                                                                event.target
+                                                                    .value,
+                                                            )
+                                                        }
+                                                    />
+                                                    <InputError
+                                                        message={
+                                                            form.errors
+                                                                .dimension
+                                                        }
+                                                    />
+                                                </div>
+                                            </div>
                                         </div>
-                                    )}
-                                    {selectedType && isOtherCategory && (
-                                        <Input
-                                            aria-label="Specify other project category"
-                                            placeholder="Specify category"
-                                            value={specifiedCategory}
-                                            onChange={(event) =>
-                                                form.setData(
-                                                    'category',
-                                                    `Others: ${event.target.value}`,
-                                                )
-                                            }
-                                        />
-                                    )}
-                                    <InputError
-                                        message={form.errors.category}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <Label htmlFor="implementation_scheme">
-                                        Implementation scheme
-                                    </Label>
+                                        <div className="order-3 xl:order-none">
+                                            <div className="space-y-2">
+                                                <Label>6. Category</Label>
+                                                {!selectedType ? (
+                                                    <p className="text-sm text-muted-foreground">
+                                                        Select a project type to
+                                                        view its categories.
+                                                    </p>
+                                                ) : (
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {availableCategories.map(
+                                                            (category) => (
+                                                                <label
+                                                                    key={
+                                                                        category
+                                                                    }
+                                                                    className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm ${selectedCategory === category ? 'border-primary bg-primary/5' : ''}`}
+                                                                >
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        className="size-4"
+                                                                        checked={
+                                                                            selectedCategory ===
+                                                                            category
+                                                                        }
+                                                                        onChange={() =>
+                                                                            form.setData(
+                                                                                'category',
+                                                                                selectedCategory ===
+                                                                                    category
+                                                                                    ? ''
+                                                                                    : category,
+                                                                            )
+                                                                        }
+                                                                    />
+                                                                    {category}
+                                                                </label>
+                                                            ),
+                                                        )}
+                                                        <label
+                                                            className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm ${isOtherCategory ? 'border-primary bg-primary/5' : ''}`}
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                className="size-4"
+                                                                checked={
+                                                                    isOtherCategory
+                                                                }
+                                                                onChange={() =>
+                                                                    form.setData(
+                                                                        'category',
+                                                                        isOtherCategory
+                                                                            ? ''
+                                                                            : 'Others: ',
+                                                                    )
+                                                                }
+                                                            />
+                                                            Others (specify)
+                                                        </label>
+                                                    </div>
+                                                )}
+                                                {selectedType &&
+                                                    isOtherCategory && (
+                                                        <Input
+                                                            aria-label="Specify other project category"
+                                                            placeholder="Specify category"
+                                                            value={
+                                                                specifiedCategory
+                                                            }
+                                                            onChange={(event) =>
+                                                                form.setData(
+                                                                    'category',
+                                                                    `Others: ${event.target.value}`,
+                                                                )
+                                                            }
+                                                        />
+                                                    )}
+                                                <InputError
+                                                    message={
+                                                        form.errors.category
+                                                    }
+                                                />
+                                            </div>
+                                            <div className="mt-2">
+                                                {field(
+                                                    'contract_duration',
+                                                    '7. Calendar days to complete',
+                                                    'number',
+                                                )}
+                                            </div>
+                                            <div className="mt-2">
+                                                <div className="grid gap-2 sm:grid-cols-2">
+                                                    {field(
+                                                        'source_of_funds',
+                                                        '8. Source of funds',
+                                                    )}
+                                                    <div className="space-y-1">
+                                                        <Label htmlFor="allotment_class">
+                                                            8.1. Allotment class
+                                                        </Label>
+                                                        <select
+                                                            id="allotment_class"
+                                                            className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                                                            value={
+                                                                form.data
+                                                                    .allotment_class ??
+                                                                ''
+                                                            }
+                                                            onChange={(event) =>
+                                                                form.setData(
+                                                                    'allotment_class',
+                                                                    event.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                        >
+                                                            <option value="">
+                                                                Select allotment
+                                                                class
+                                                            </option>
+                                                            <option value="Trust Fund">
+                                                                Trust Fund
+                                                            </option>
+                                                            <option value="General Fund">
+                                                                General Fund
+                                                            </option>
+                                                        </select>
+                                                        <InputError
+                                                            message={
+                                                                form.errors
+                                                                    .allotment_class
+                                                            }
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="order-2 xl:order-none">
+                                            {' '}
+                                            {field(
+                                                'floor_area',
+                                                '5.2. Floor area',
+                                            )}
+                                        </div>
+                                        <div className="order-4 xl:order-none">
+                                            <div className="space-y-1">
+                                                <Label htmlFor="implementation_scheme">
+                                                    9. Implementation scheme
+                                                </Label>
+                                                <select
+                                                    id="implementation_scheme"
+                                                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                                                    value={
+                                                        form.data
+                                                            .implementation_scheme ??
+                                                        ''
+                                                    }
+                                                    onChange={(event) =>
+                                                        form.setData(
+                                                            'implementation_scheme',
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                >
+                                                    <option value="">
+                                                        Select scheme
+                                                    </option>
+                                                    <option value="Administration">
+                                                        Administration
+                                                    </option>
+                                                    <option value="contract">
+                                                        Contract
+                                                    </option>
+                                                </select>
+                                                <InputError
+                                                    message={
+                                                        form.errors
+                                                            .implementation_scheme
+                                                    }
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </div>
+                </div>
+                <Card
+                    className={panel === 'signatories' ? undefined : 'hidden'}
+                >
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Users
+                                className="size-4 text-primary"
+                                aria-hidden="true"
+                            />
+                            Signatories
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid content-start gap-x-3 gap-y-2 border-t py-3 md:grid-cols-2 xl:grid-cols-3">
+                        {signatoryFields.map(([name, label]) => {
+                            const people = signatories.filter(
+                                (person) =>
+                                    person.roles.includes(name) ||
+                                    (name === 'prepared_by' &&
+                                        person.is_current_user) ||
+                                    person.cats_no === project?.[name],
+                            );
+
+                            return (
+                                <div className="space-y-1" key={name}>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <Label htmlFor={String(name)}>
+                                            {label}
+                                        </Label>
+                                        {canCreateSignatories &&
+                                            name !== 'prepared_by' &&
+                                            (() => {
+                                                const role =
+                                                    signatoryRoleOptions.find(
+                                                        (option) =>
+                                                            option.key === name,
+                                                    );
+                                                const unavailable =
+                                                    role?.cats_no !== null &&
+                                                    !canUpdateSignatories;
+
+                                                return (
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="size-7 p-0"
+                                                        disabled={unavailable}
+                                                        aria-label={`Add ${label} signatory`}
+                                                        title={
+                                                            unavailable
+                                                                ? 'Update permission is required to replace the current role holder.'
+                                                                : `Add ${label} signatory`
+                                                        }
+                                                        onClick={() =>
+                                                            openAddSignatory(
+                                                                name,
+                                                            )
+                                                        }
+                                                    >
+                                                        <Plus />
+                                                    </Button>
+                                                );
+                                            })()}
+                                    </div>
                                     <select
-                                        id="implementation_scheme"
+                                        id={String(name)}
                                         className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                                        value={
-                                            form.data.implementation_scheme ??
-                                            ''
-                                        }
+                                        disabled={name === 'prepared_by'}
+                                        value={String(form.data[name] ?? '')}
                                         onChange={(event) =>
                                             form.setData(
-                                                'implementation_scheme',
+                                                name,
                                                 event.target.value,
                                             )
                                         }
                                     >
-                                        <option value="">Select scheme</option>
-                                        <option value="Administration">
-                                            Administration
+                                        <option value="">
+                                            No signatory selected
                                         </option>
-                                        <option value="contract">
-                                            Contract
-                                        </option>
-                                    </select>
-                                    <InputError
-                                        message={
-                                            form.errors.implementation_scheme
-                                        }
-                                    />
-                                </div>
-                                {field('floor_area', 'Floor area')}
-                                <div className="space-y-1 md:col-span-2">
-                                    <Label htmlFor="dimension">
-                                        Dimensions
-                                    </Label>
-                                    <textarea
-                                        id="dimension"
-                                        className="min-h-16 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
-                                        value={form.data.dimension ?? ''}
-                                        onChange={(event) =>
-                                            form.setData(
-                                                'dimension',
-                                                event.target.value,
-                                            )
-                                        }
-                                    />
-                                    <InputError
-                                        message={form.errors.dimension}
-                                    />
-                                </div>
-                            </CardContent>
-                        </details>
-                    </Card>
-                    <Card className="h-full !gap-0 overflow-hidden !py-0">
-                        <details
-                            className="group grid h-full open:grid-rows-[auto_1fr]"
-                            open={signatoriesOpen}
-                            onToggle={(event) =>
-                                setSignatoriesOpen(event.currentTarget.open)
-                            }
-                        >
-                            <summary className="flex min-h-20 cursor-pointer list-none items-center justify-between gap-3 bg-muted/30 px-4 py-3 marker:hidden">
-                                <div>
-                                    <div className="font-semibold">
-                                        Signatories
-                                    </div>
-                                    <div className="text-sm text-muted-foreground">
-                                        Prepared by follows the logged-in user;
-                                        other roles use the current library
-                                        assignments.
-                                    </div>
-                                </div>
-                                <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-                            </summary>
-                            <CardContent className="grid content-start gap-3 border-t py-4 md:grid-cols-2">
-                                {signatoryFields.map(([name, label]) => {
-                                    const people = signatories.filter(
-                                        (person) =>
-                                            person.roles.includes(name) ||
-                                            (name === 'prepared_by' &&
-                                                person.is_current_user) ||
-                                            person.cats_no === project?.[name],
-                                    );
-
-                                    return (
-                                        <div className="space-y-1" key={name}>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <Label htmlFor={String(name)}>
-                                                    {label}
-                                                </Label>
-                                                {canCreateSignatories &&
-                                                    name !== 'prepared_by' &&
-                                                    (() => {
-                                                        const role =
-                                                            signatoryRoleOptions.find(
-                                                                (option) =>
-                                                                    option.key ===
-                                                                    name,
-                                                            );
-                                                        const unavailable =
-                                                            role?.cats_no !==
-                                                                null &&
-                                                            !canUpdateSignatories;
-
-                                                        return (
-                                                            <Button
-                                                                type="button"
-                                                                size="sm"
-                                                                variant="ghost"
-                                                                className="size-7 p-0"
-                                                                disabled={
-                                                                    unavailable
-                                                                }
-                                                                aria-label={`Add ${label} signatory`}
-                                                                title={
-                                                                    unavailable
-                                                                        ? 'Update permission is required to replace the current role holder.'
-                                                                        : `Add ${label} signatory`
-                                                                }
-                                                                onClick={() =>
-                                                                    openAddSignatory(
-                                                                        name,
-                                                                    )
-                                                                }
-                                                            >
-                                                                <Plus />
-                                                            </Button>
-                                                        );
-                                                    })()}
-                                            </div>
-                                            <select
-                                                id={String(name)}
-                                                className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                                                disabled={
-                                                    name === 'prepared_by'
-                                                }
-                                                value={String(
-                                                    form.data[name] ?? '',
-                                                )}
-                                                onChange={(event) =>
-                                                    form.setData(
-                                                        name,
-                                                        event.target.value,
-                                                    )
-                                                }
+                                        {people.map((person) => (
+                                            <option
+                                                key={person.cats_no}
+                                                value={person.cats_no}
                                             >
-                                                <option value="">
-                                                    No signatory selected
-                                                </option>
-                                                {people.map((person) => (
-                                                    <option
-                                                        key={person.cats_no}
-                                                        value={person.cats_no}
-                                                    >
-                                                        {person.name} —{' '}
-                                                        {person.position}
-                                                        {!person.roles.includes(
-                                                            name,
-                                                        ) &&
-                                                        !(
-                                                            name ===
-                                                                'prepared_by' &&
-                                                            person.is_current_user
-                                                        )
-                                                            ? ' (previous assignment)'
-                                                            : ''}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            {name === 'prepared_by' &&
-                                                !project && (
-                                                    <p className="text-xs text-muted-foreground">
-                                                        {currentUserPreparer
-                                                            ? 'Automatically recognized from your linked user account.'
-                                                            : 'Your user account is not linked to an active signatory. Ask an administrator to link it in Libraries → Signatories.'}
-                                                    </p>
-                                                )}
-                                            {name === 'prepared_by' &&
-                                                project && (
-                                                    <p className="text-xs text-muted-foreground">
-                                                        Recorded from the user
-                                                        who created the project
-                                                        and cannot be changed.
-                                                    </p>
-                                                )}
-                                            {people.length === 0 &&
-                                                name !== 'prepared_by' && (
-                                                    <p className="text-xs text-muted-foreground">
-                                                        No active person is
-                                                        tagged for this role.
-                                                    </p>
-                                                )}
-                                            <InputError
-                                                message={form.errors[name]}
-                                            />
-                                        </div>
-                                    );
-                                })}
-                                {signatories.length === 0 && (
-                                    <p className="text-sm text-muted-foreground md:col-span-2">
-                                        Use the plus button beside a project
-                                        role to add a signatory and assign it
-                                        here.
-                                    </p>
-                                )}
-                            </CardContent>
-                        </details>
-                    </Card>
-                </div>
-                <div className="flex flex-wrap items-center justify-end gap-3">
+                                                {person.name} —{' '}
+                                                {person.position}
+                                                {!person.roles.includes(name) &&
+                                                !(
+                                                    name === 'prepared_by' &&
+                                                    person.is_current_user
+                                                )
+                                                    ? ' (previous assignment)'
+                                                    : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {name === 'prepared_by' && !project && (
+                                        <p className="text-xs text-muted-foreground">
+                                            {currentUserPreparer
+                                                ? 'Automatically recognized from your linked user account.'
+                                                : 'Your user account is not linked to an active signatory. Ask an administrator to link it in Libraries → Signatories.'}
+                                        </p>
+                                    )}
+                                    {name === 'prepared_by' && project && (
+                                        <p className="text-xs text-muted-foreground">
+                                            Recorded from the user who created
+                                            the project and cannot be changed.
+                                        </p>
+                                    )}
+                                    {people.length === 0 &&
+                                        name !== 'prepared_by' && (
+                                            <p className="text-xs text-muted-foreground">
+                                                No active person is tagged for
+                                                this role.
+                                            </p>
+                                        )}
+                                    <InputError message={form.errors[name]} />
+                                </div>
+                            );
+                        })}
+                        {signatories.length === 0 && (
+                            <p className="text-sm text-muted-foreground md:col-span-2 xl:col-span-3">
+                                Use the plus button beside a project role to add
+                                a signatory and assign it here.
+                            </p>
+                        )}
+                    </CardContent>
+                </Card>
+
+                <div className="flex flex-wrap items-center justify-end gap-3 border-t pt-3">
                     {!project && !currentUserPreparer && (
                         <p className="text-sm text-destructive">
                             Project creation is unavailable until your user
@@ -691,7 +965,6 @@ export default function ProjectForm({
                             Add signatory
                             {signatoryForm.data.roles.length > 0 && (
                                 <span className="text-muted-foreground">
-                                    {' '}
                                     for{' '}
                                     {signatoryForm.data.roles
                                         .map(

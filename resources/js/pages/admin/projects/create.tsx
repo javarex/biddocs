@@ -26,13 +26,15 @@ export default function ProjectCreate({
     return (
         <>
             <Head title="Create project" />
-            <div className="space-y-4 p-3 md:p-4">
+            <div className="space-y-2 p-3">
                 <PageHeader
+                    compact
                     title="Create project"
                     description="Enter the project details, then build its sections and DUPA estimates."
                     backHref="/admin/projects"
                 />
                 <ProjectForm
+                    worksheet
                     signatories={signatories}
                     signatoryDefaults={signatoryDefaults}
                     canCreateSignatories={canCreateSignatories}

@@ -22,12 +22,35 @@ export function NavMain({
     label = 'Platform',
 }: {
     items: NavItem[];
-    label?: string;
+    label?: string | null;
 }) {
     const { isCurrentUrl } = useCurrentUrl();
     const { state, isMobile } = useSidebar();
     const [open, setOpen] = useState(true);
     const iconOnly = state === 'collapsed' && !isMobile;
+
+    const menu = (
+        <SidebarMenu>
+            {items.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                        asChild
+                        isActive={isCurrentUrl(item.href)}
+                        tooltip={{ children: item.title }}
+                    >
+                        <Link href={item.href} prefetch>
+                            {item.icon && <item.icon />}
+                            <span>{item.title}</span>
+                        </Link>
+                    </SidebarMenuButton>
+                </SidebarMenuItem>
+            ))}
+        </SidebarMenu>
+    );
+
+    if (label === null) {
+        return <SidebarGroup className="px-2 py-0">{menu}</SidebarGroup>;
+    }
 
     return (
         <Collapsible open={iconOnly || open} onOpenChange={setOpen} asChild>
@@ -45,24 +68,7 @@ export function NavMain({
                         />
                     </CollapsibleTrigger>
                 </SidebarGroupLabel>
-                <CollapsibleContent>
-                    <SidebarMenu>
-                        {items.map((item) => (
-                            <SidebarMenuItem key={item.title}>
-                                <SidebarMenuButton
-                                    asChild
-                                    isActive={isCurrentUrl(item.href)}
-                                    tooltip={{ children: item.title }}
-                                >
-                                    <Link href={item.href} prefetch>
-                                        {item.icon && <item.icon />}
-                                        <span>{item.title}</span>
-                                    </Link>
-                                </SidebarMenuButton>
-                            </SidebarMenuItem>
-                        ))}
-                    </SidebarMenu>
-                </CollapsibleContent>
+                <CollapsibleContent>{menu}</CollapsibleContent>
             </SidebarGroup>
         </Collapsible>
     );

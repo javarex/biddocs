@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import type { ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
+import LaborDaysAuto from '@/components/labor-days-auto';
 import { Input } from '@/components/ui/input';
 
 type Result = { value: string; label: string };
@@ -13,7 +15,9 @@ export default function BackupDaysCell({
     canLink,
     onResult,
     onManual,
+    autoCompute,
 }: {
+    autoCompute?: ComponentProps<typeof LaborDaysAuto>;
     label: string;
     value: string | number;
     formula?: string;
@@ -122,7 +126,7 @@ export default function BackupDaysCell({
                 setError(
                     canLink
                         ? 'Choose a backup result.'
-                        : 'Save estimate changes before linking a result.',
+                        : 'Finish the current save or apply backup changes before linking a result.',
                 );
             }
 
@@ -141,7 +145,7 @@ export default function BackupDaysCell({
 
         if (formula && !canLink) {
             setError(
-                'Save estimate changes before changing the linked result.',
+                'Finish the current save or apply backup changes before changing the linked result.',
             );
 
             return;
@@ -159,88 +163,91 @@ export default function BackupDaysCell({
 
     return (
         <div className="backup-days-cell min-w-0">
-            <Input
-                ref={input}
-                data-sheet-column="days"
-                aria-label={label}
-                type="text"
-                className="text-right tabular-nums"
-                role="combobox"
-                aria-autocomplete="list"
-                aria-expanded={searching}
-                aria-controls={searching ? listId : undefined}
-                aria-activedescendant={
-                    searching && canLink && matches[highlight]
-                        ? `${listId}-${highlight}`
-                        : undefined
-                }
-                aria-invalid={Boolean(error)}
-                aria-describedby={error ? `${listId}-error` : undefined}
-                placeholder="Days or =result"
-                title={
-                    formula
-                        ? `${selected?.label ?? formula} · type a number to use direct count`
-                        : 'Enter days, or type = to choose a backup result'
-                }
-                disabled={disabled}
-                value={draft ?? value}
-                onFocus={() => {
-                    setFocused(true);
-                    edited.current = false;
-                    setDraft(String(value));
-                    setError('');
-                    setHighlight(0);
-                }}
-                onChange={(e) => {
-                    edited.current = true;
-                    setDraft(e.target.value);
-                    setError('');
-                    setHighlight(0);
-                }}
-                onBlur={() => {
-                    setFocused(false);
-                    void commit();
-                }}
-                onKeyDown={(e) => {
-                    if (e.key === '=' && !searching) {
-                        e.preventDefault();
-                        edited.current = true;
-                        setDraft('=');
+            <div className="relative min-w-0">
+                {autoCompute && <LaborDaysAuto {...autoCompute} />}
+                <Input
+                    ref={input}
+                    data-sheet-column="days"
+                    aria-label={label}
+                    type="text"
+                    className={`text-right tabular-nums ${autoCompute ? 'backup-days-input' : ''}`}
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded={searching}
+                    aria-controls={searching ? listId : undefined}
+                    aria-activedescendant={
+                        searching && canLink && matches[highlight]
+                            ? `${listId}-${highlight}`
+                            : undefined
+                    }
+                    aria-invalid={Boolean(error)}
+                    aria-describedby={error ? `${listId}-error` : undefined}
+                    placeholder="Days or =result"
+                    title={
+                        formula
+                            ? `${selected?.label ?? formula} · type a number to use direct count`
+                            : 'Enter days, or type = to choose a backup result'
+                    }
+                    disabled={disabled}
+                    value={draft ?? value}
+                    onFocus={() => {
+                        setFocused(true);
+                        edited.current = false;
+                        setDraft(String(value));
+                        setError('');
                         setHighlight(0);
+                    }}
+                    onChange={(e) => {
+                        edited.current = true;
+                        setDraft(e.target.value);
                         setError('');
-                    } else if (e.key === 'Escape') {
-                        e.stopPropagation();
-                        setDraft(null);
-                        setError('');
-                    } else if (
-                        searching &&
-                        (e.key === 'ArrowDown' || e.key === 'ArrowUp')
-                    ) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setHighlight((i) =>
-                            Math.max(
-                                0,
-                                Math.min(
-                                    matches.length - 1,
-                                    i + (e.key === 'ArrowDown' ? 1 : -1),
-                                ),
-                            ),
-                        );
-                    } else if (e.key === 'Enter') {
-                        if (searching) {
+                        setHighlight(0);
+                    }}
+                    onBlur={() => {
+                        setFocused(false);
+                        void commit();
+                    }}
+                    onKeyDown={(e) => {
+                        if (e.key === '=' && !searching) {
+                            e.preventDefault();
+                            edited.current = true;
+                            setDraft('=');
+                            setHighlight(0);
+                            setError('');
+                        } else if (e.key === 'Escape') {
+                            e.stopPropagation();
+                            setDraft(null);
+                            setError('');
+                        } else if (
+                            searching &&
+                            (e.key === 'ArrowDown' || e.key === 'ArrowUp')
+                        ) {
                             e.preventDefault();
                             e.stopPropagation();
-                        }
+                            setHighlight((i) =>
+                                Math.max(
+                                    0,
+                                    Math.min(
+                                        matches.length - 1,
+                                        i + (e.key === 'ArrowDown' ? 1 : -1),
+                                    ),
+                                ),
+                            );
+                        } else if (e.key === 'Enter') {
+                            if (searching) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                            }
 
-                        if (searching && canLink && matches[highlight]) {
-                            void choose(matches[highlight]);
-                        } else {
-                            input.current?.blur();
+                            if (searching && canLink && matches[highlight]) {
+                                void choose(matches[highlight]);
+                            } else {
+                                input.current?.blur();
+                            }
                         }
-                    }
-                }}
-            />
+                    }}
+                />
+            </div>
             {error && (
                 <span
                     id={`${listId}-error`}
@@ -269,8 +276,8 @@ export default function BackupDaysCell({
                     >
                         {!canLink ? (
                             <p className="px-3 py-2 text-xs">
-                                Save estimate changes before linking a backup
-                                result.
+                                Finish the current save or apply backup changes
+                                before linking a result.
                             </p>
                         ) : matches.length ? (
                             matches.map((result, i) => (

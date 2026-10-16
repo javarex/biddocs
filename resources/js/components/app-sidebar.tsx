@@ -72,13 +72,6 @@ export function AppSidebar() {
                   icon: FolderKanban,
               }
             : null,
-        can('projects.update')
-            ? {
-                  title: 'Backup Templates',
-                  href: '/admin/backup-templates',
-                  icon: FileSpreadsheet,
-              }
-            : null,
         can('imports.view')
             ? { title: 'Excel Imports', href: '/admin/imports', icon: Upload }
             : null,
@@ -99,45 +92,56 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={mainNavItems} label="Overview" />
+                <NavMain items={mainNavItems} label={null} />
                 {procurementItems.length > 0 && (
                     <NavMain items={procurementItems} label="Procurement" />
                 )}
-                {can('libraries.view') && (
+                {(can('libraries.view') || can('projects.update')) && (
                     <NavMain
                         label="Libraries"
-                        items={[
-                            {
-                                title: 'DPWH DUPA',
-                                href: '/admin/dpwh-dupa',
-                                icon: FileSpreadsheet,
-                            },
-                            {
-                                title: 'Categories',
-                                href: '/admin/libraries/categories',
-                                icon: Tags,
-                            },
-                            {
-                                title: 'Items',
-                                href: '/admin/libraries/items',
-                                icon: Package,
-                            },
-                            {
-                                title: 'Labor',
-                                href: '/admin/libraries/labors',
-                                icon: HardHat,
-                            },
-                            {
-                                title: 'Equipment',
-                                href: '/admin/libraries/equipments',
-                                icon: Truck,
-                            },
-                            {
-                                title: 'Signatories',
-                                href: '/admin/libraries/signatories',
-                                icon: Signature,
-                            },
-                        ]}
+                        items={visibleNavItems([
+                            ...(can('libraries.view')
+                                ? [
+                                      {
+                                          title: 'DPWH DUPA',
+                                          href: '/admin/dpwh-dupa',
+                                          icon: FileSpreadsheet,
+                                      },
+                                      {
+                                          title: 'Categories',
+                                          href: '/admin/libraries/categories',
+                                          icon: Tags,
+                                      },
+                                      {
+                                          title: 'Items',
+                                          href: '/admin/libraries/items',
+                                          icon: Package,
+                                      },
+                                      {
+                                          title: 'Labor',
+                                          href: '/admin/libraries/labors',
+                                          icon: HardHat,
+                                      },
+                                      {
+                                          title: 'Equipment',
+                                          href: '/admin/libraries/equipments',
+                                          icon: Truck,
+                                      },
+                                      {
+                                          title: 'Signatories',
+                                          href: '/admin/libraries/signatories',
+                                          icon: Signature,
+                                      },
+                                  ]
+                                : []),
+                            can('projects.update')
+                                ? {
+                                      title: 'Backup Templates',
+                                      href: '/admin/backup-templates',
+                                      icon: FileSpreadsheet,
+                                  }
+                                : null,
+                        ])}
                     />
                 )}
                 {administrationItems.length > 0 && (

@@ -2,10 +2,14 @@ import { Head } from '@inertiajs/react';
 import { Pencil } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import PageHeader from '@/components/page-header';
+import ProjectCharges from '@/components/project-charges';
+import type { Setting, Misc, Total } from '@/components/project-charges';
+import ProjectDupaDetails from '@/components/project-dupa-details';
 import ProjectDupaActions, {
     DupaEstimateDialog,
 } from '@/components/project-dupa-workspace';
 import type { DupaSection } from '@/components/project-dupa-workspace';
+import type { ProjectFields } from '@/components/project-form';
 import { Button } from '@/components/ui/button';
 import type { Item, Props } from './show';
 
@@ -18,9 +22,16 @@ const value = (n: number | undefined) =>
 
 export default function ProjectDupa({
     project,
+    chargeData,
     dupaSections = [],
     openEstimateId = null,
 }: Pick<Props, 'project'> & {
+    chargeData: {
+        pol: ProjectFields['pol'];
+        settings: Record<'ADD' | 'NON_ADD', Setting>;
+        miscellaneous: Misc[];
+        totals: Record<'ADD' | 'NON_ADD', Total>;
+    };
     dupaSections?: DupaSection[];
     openEstimateId?: number | null;
 }) {
@@ -37,14 +48,6 @@ export default function ProjectDupa({
         );
     const selectedTotal = total(side);
     const cell = 'border border-slate-400 px-2 py-2';
-    const detail = (label: string, content: string | number | null) => (
-        <div className="border border-slate-400 p-3">
-            <div className="mb-1 text-xs">{label}</div>
-            <div className="font-semibold whitespace-pre-line">
-                {content || '—'}
-            </div>
-        </div>
-    );
     const row = (item: Item) => {
         const estimate = item.estimates[side];
 
@@ -136,48 +139,7 @@ export default function ProjectDupa({
                         <div className="border border-slate-400 py-3 text-center text-base font-bold">
                             SUMMARY OF ESTIMATED COST
                         </div>
-                        <div className="grid grid-cols-[2fr_1fr_1fr] text-sm">
-                            {detail(
-                                '2.) Name of Project:',
-                                project.project_name,
-                            )}
-                            {detail('3.) Location:', project.location)}
-                            {detail(
-                                '4.) Type of Projects:',
-                                project.type_of_projects,
-                            )}
-                            {detail(
-                                '5.) Project Description:',
-                                project.project_description,
-                            )}
-                            <div className="col-span-2">
-                                {detail('6.) Category:', project.category)}
-                            </div>
-                            {detail('5.1) Dimension:', project.dimension)}
-                            <div className="col-span-2">
-                                {detail(
-                                    '8.) Source of Funds:',
-                                    project.source_of_funds,
-                                )}
-                            </div>
-                            {detail('5.2) Floor Area:', project.floor_area)}
-                            <div className="col-span-2">
-                                {detail(
-                                    '8.1) Allotment class:',
-                                    project.allotment_class,
-                                )}
-                            </div>
-                            {detail(
-                                '7.) Calendar days to Complete:',
-                                `${project.contract_duration} Days`,
-                            )}
-                            <div className="col-span-2">
-                                {detail(
-                                    '9.) Implementation Scheme:',
-                                    project.implementation_scheme,
-                                )}
-                            </div>
-                        </div>
+                        <ProjectDupaDetails project={project} />
                         <table className="w-full border-collapse text-xs tabular-nums">
                             <caption className="border border-slate-400 p-2 text-left text-sm font-semibold">
                                 10.) Summary of Estimated Cost
@@ -278,6 +240,17 @@ export default function ProjectDupa({
                                 </tr>
                             </tfoot>
                         </table>
+                        <div className="mt-4 [&_[data-slot=card-title]]:text-sm">
+                            <ProjectCharges
+                                key={JSON.stringify(chargeData)}
+                                projectId={project.id}
+                                pol={chargeData.pol}
+                                initialSettings={chargeData.settings}
+                                initialMisc={chargeData.miscellaneous}
+                                totals={chargeData.totals}
+                                readOnly={!project.can_edit}
+                            />
+                        </div>
                         <p className="mt-3 text-xs text-slate-600">
                             Weight is based on the selected estimate's total
                             item amount. ADD and NON-ADD retain their own

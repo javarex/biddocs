@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\DupaEstimateService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -80,15 +81,18 @@ class ProjectController extends Controller
             }
         }
 
-        $project = Project::query()->create($data + ['created_by' => $request->user()->id]);
-        $this->estimates->ensureProjectSettings($project);
-        $project->estimateSettings()->where('estimate_type', 'ADD')->update([
-            'pol_amount' => $project->pol ?? 0,
-            'contingencies_amount' => $project->contingencies ?? 0,
-        ]);
+        $project = DB::transaction(function () use ($data, $request): Project {
+            $miscellaneous = $data['miscellaneous'] ?? [];
+            unset($data['miscellaneous']);
+            $project = Project::query()->create($data + ['created_by' => $request->user()->id]);
+            $this->syncProjectCharges($project);
+            $this->syncMiscellaneous($project, $miscellaneous);
 
-        return to_route('admin.projects.edit', ['project' => $project])
-            ->with('success', 'Project created. Open DUPA to add its sections and items.');
+            return $project;
+        });
+
+        return to_route('admin.projects.dupa', ['project' => $project])
+            ->with('success', 'Project created. Add its sections and DUPA items here.');
     }
 
     public function show(Project $project): Response
@@ -116,7 +120,23 @@ class ProjectController extends Controller
             'sections.subSections.projectItems.estimates',
         ]);
 
+        $chargeData = [];
+        if ($component === 'admin/projects/dupa') {
+            $this->estimates->ensureProjectSettings($project);
+            $chargeData = [
+                'pol' => $project->pol,
+                'settings' => $project->estimateSettings()->get()->mapWithKeys(fn ($setting): array => [$setting->estimate_type => $setting->only([
+                    'pol_amount', 'pre_engineering_percentage', 'supervision_percentage', 'contingencies_amount',
+                ])]),
+                'miscellaneous' => $project->miscellaneous()->orderBy('estimate_type')->orderBy('sort_order')->get()->map(fn ($row): array => $row->only([
+                    'estimate_type', 'description', 'unit', 'amount', 'multiplier',
+                ])),
+                'totals' => $this->estimates->projectTotals($project),
+            ];
+        }
+
         return Inertia::render($component, [
+            'chargeData' => $chargeData,
             'can_view_dupa' => Gate::allows('projects.dupa.view'),
             ...($component === 'admin/projects/dupa' && Gate::allows('update', $project) ? [
                 'dupaSections' => $project->sections->map(fn (Section $section): array => [
@@ -195,7 +215,7 @@ class ProjectController extends Controller
             ...$this->signatoryFormData($project),
             'canViewDupa' => Gate::allows('projects.dupa.view'),
             'totals' => $this->estimates->projectTotals($project),
-            'initialStep' => in_array($request->query('step'), ['details', 'charges', 'review'], true)
+            'initialStep' => in_array($request->query('step'), ['details', 'signatories', 'review'], true)
                 ? $request->query('step')
                 : 'details',
             'completion' => [
@@ -228,15 +248,38 @@ class ProjectController extends Controller
     {
         Gate::authorize('update', $project);
         $data = $this->validated($request, $project);
-        unset($data['prepared_by']);
-        $project->update($data + ['estimates_updated_at' => now()]);
+        DB::transaction(function () use ($project, $data): void {
+            $miscellaneous = $data['miscellaneous'] ?? null;
+            unset($data['prepared_by'], $data['miscellaneous']);
+            $project->update($data + ['estimates_updated_at' => now()]);
+            if (array_key_exists('pol', $data) || array_key_exists('contingencies', $data)) {
+                $this->syncProjectCharges($project);
+            }
+            if ($miscellaneous !== null) {
+                $this->syncMiscellaneous($project, $miscellaneous);
+            }
+        });
+
+        return back()->with('success', 'Project details updated.');
+    }
+
+    private function syncProjectCharges(Project $project): void
+    {
         $this->estimates->ensureProjectSettings($project);
         $project->estimateSettings()->where('estimate_type', 'ADD')->update([
             'pol_amount' => $project->pol ?? 0,
             'contingencies_amount' => $project->contingencies ?? 0,
         ]);
+        $project->estimateSettings()->where('estimate_type', 'NON_ADD')->update(['pol_amount' => 0]);
+    }
 
-        return back()->with('success', 'Project details updated.');
+    /** @param array<int, array<string, mixed>> $rows */
+    private function syncMiscellaneous(Project $project, array $rows): void
+    {
+        $project->miscellaneous()->delete();
+        foreach ($rows as $index => $row) {
+            $project->miscellaneous()->create($row + ['sort_order' => $index]);
+        }
     }
 
     public function destroy(Project $project): RedirectResponse
@@ -319,6 +362,13 @@ class ProjectController extends Controller
                     }
                 },
             ],
+            'miscellaneous' => ['sometimes', 'array'],
+            'miscellaneous.*' => ['required', 'array:estimate_type,description,unit,amount,multiplier'],
+            'miscellaneous.*.estimate_type' => ['required', Rule::in(['ADD', 'NON_ADD'])],
+            'miscellaneous.*.description' => ['required', 'string', 'max:10000'],
+            'miscellaneous.*.unit' => ['required', 'string', 'max:45'],
+            'miscellaneous.*.amount' => ['required', 'numeric', 'min:0'],
+            'miscellaneous.*.multiplier' => ['required', 'numeric', 'min:0'],
             'pol' => ['nullable', 'numeric', 'min:0'],
             'contingencies' => ['nullable', 'numeric', 'min:0'],
             'prepared_by' => ['nullable', 'string', 'max:64', Rule::exists('signatories', 'cats_no')],

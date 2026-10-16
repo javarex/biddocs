@@ -1,4 +1,4 @@
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import BackupTemplatePicker from '@/components/backup-template-picker';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,10 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import {
+    insertFormulaReference,
+    removeFormulaReference,
+} from '@/lib/formula-reference';
 
 type Kind = 'labors' | 'equipment' | 'items';
 type NamedValue = {
@@ -49,7 +53,10 @@ export type BackupEstimate = {
     backup_revision?: number;
     backups?: Backup[];
     backup_bindings?: Binding[] | null;
-    backup_applied?: { document: Document } | null;
+    backup_applied?: {
+        document: Document;
+        values?: Record<string, number>;
+    } | null;
 };
 export type BackupTemplate = {
     id: number;
@@ -111,7 +118,7 @@ const selectClass =
 const buttonClass =
     'border-slate-300 bg-white text-slate-800 hover:bg-slate-100 hover:text-slate-950 dark:bg-white dark:text-slate-800';
 const sheetInput =
-    'h-9 w-full min-w-0 rounded-none border-0 bg-transparent px-2 text-sm text-slate-950 shadow-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-600';
+    'h-7 w-full min-w-0 rounded-none border-0 bg-transparent px-1.5 py-0 text-xs leading-4 text-slate-950 shadow-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-600';
 // MySQL JSON may reorder object keys; that must not mark an applied backup as a draft.
 export const stableJson = (value: unknown): string =>
     JSON.stringify(value, (_key, node) =>
@@ -241,6 +248,7 @@ export default function DupaBackups<
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
     const [calculating, setCalculating] = useState(false);
+    const [zoom, setZoom] = useState(100);
     const [changed, setChanged] = useState(false);
     const [templateId, setTemplateId] = useState('');
     const [templateName, setTemplateName] = useState('');
@@ -253,6 +261,13 @@ export default function DupaBackups<
     const [selection, setSelection] = useState<Cell | null>(null);
     const [editing, setEditing] = useState<Cell | null>(null);
     const [formulaTarget, setFormulaTarget] = useState('');
+    const [resultSelection, setResultSelection] = useState<{
+        backup: string;
+        key: string;
+    } | null>(null);
+    const [referenceMode, setReferenceMode] = useState(false);
+    const formulaInput = useRef<HTMLInputElement>(null);
+    const formulaCaret = useRef({ start: 0, end: 0 });
     const grid = useRef<HTMLTableElement>(null);
     const currentBackups = document.backups;
     const appliedKeys = usedBackupKeys(estimate.backup_applied?.document);
@@ -305,17 +320,57 @@ export default function DupaBackups<
         stableJson(
             estimate.backup_applied?.document ?? { backups: [], bindings: [] },
         ) !== stableJson(document);
+    const selectedResult =
+        resultSelection?.backup === backup?.key
+            ? backup?.definition.outputs.find(
+                  (output) => output.key === resultSelection?.key,
+              )
+            : undefined;
+    const resultReferences = [
+        ...new Set(
+            String(selectedResult?.value ?? '').match(
+                /(?<![A-Za-z_0-9.])(?:rows\.[A-Za-z_0-9]+\.[A-Za-z_0-9]+|inputs\.[A-Za-z_0-9]+|outputs\.[A-Za-z_0-9]+)/g,
+            ) ?? [],
+        ),
+    ];
+    function jumpToReference(reference: string) {
+        const element = grid.current
+            ?.closest('fieldset')
+            ?.querySelector<HTMLElement>(
+                `[data-backup-reference="${reference}"]`,
+            );
+
+        if (!element) {
+            return;
+        }
+
+        const details = element.closest('details');
+
+        if (details) {
+            details.open = true;
+        }
+
+        window.requestAnimationFrame(() =>
+            element.scrollIntoView({
+                block: 'center',
+                inline: 'nearest',
+                behavior: 'smooth',
+            }),
+        );
+    }
     const selectedRow = backup?.definition.rows.find(
         (r) => r.key === selection?.row,
     );
-    const selectedValue =
-        selection?.column === 'description'
-            ? selectedRow?.label
-            : selectedRow?.cells[selection?.column ?? ''];
-    const selectedAddress =
-        backup && selection
-            ? `${columnLetter(selection.column === 'description' ? 0 : backup.definition.columns.findIndex((c) => c.key === selection.column) + 1)}${backup.definition.rows.findIndex((r) => r.key === selection.row) + 3}`
-            : 'Select cell';
+    const selectedValue = selectedResult
+        ? selectedResult.value
+        : selection?.column === 'description'
+          ? selectedRow?.label
+          : selectedRow?.cells[selection?.column ?? ''];
+    const selectedAddress = selectedResult
+        ? selectedResult.label
+        : backup && selection
+          ? `${columnLetter(selection.column === 'description' ? 0 : backup.definition.columns.findIndex((c) => c.key === selection.column) + 1)}${backup.definition.rows.findIndex((r) => r.key === selection.row) + 3}`
+          : 'Select cell';
 
     function edit(next: Document) {
         setDocument(next);
@@ -348,6 +403,87 @@ export default function DupaBackups<
                       ? { ...r, label: value }
                       : { ...r, cells: { ...r.cells, [column]: value } },
             ),
+        });
+    }
+    function formulaValue(value: string) {
+        if (selectedResult && backup) {
+            table({
+                ...backup.definition,
+                outputs: backup.definition.outputs.map((output) =>
+                    output.key === selectedResult.key
+                        ? { ...output, value }
+                        : output,
+                ),
+            });
+        } else if (selection) {
+            cell(selection.row, selection.column, value);
+        }
+    }
+    function selectResult(key: string) {
+        if (!backup) {
+            return;
+        }
+
+        setResultSelection({ backup: backup.key, key });
+        setSelection(null);
+        setReferenceMode(false);
+        const value = String(
+            backup.definition.outputs.find((output) => output.key === key)
+                ?.value ?? '',
+        );
+        formulaCaret.current = { start: value.length, end: value.length };
+        window.requestAnimationFrame(() => {
+            formulaInput.current?.focus({ preventScroll: true });
+            formulaInput.current?.setSelectionRange(value.length, value.length);
+        });
+    }
+    function referenceFromTarget(target: EventTarget | null) {
+        if (!(target instanceof HTMLElement) || !backup) {
+            return null;
+        }
+
+        const named = target.closest<HTMLElement>('[data-backup-reference]');
+
+        if (named) {
+            return named.dataset.backupReference ?? null;
+        }
+
+        const input = target.closest<HTMLInputElement>(
+            'input[data-row][data-column]',
+        );
+
+        if (!input) {
+            return null;
+        }
+
+        const row = backup.definition.rows[Number(input.dataset.row)];
+        const column =
+            backup.definition.columns[Number(input.dataset.column) - 1];
+
+        return row && column ? `rows.${row.key}.${column.key}` : null;
+    }
+    function insertReference(reference: string) {
+        if (!selectedResult || !String(selectedResult.value).startsWith('=')) {
+            return;
+        }
+
+        if (reference === `outputs.${selectedResult.key}`) {
+            setError('A result cannot reference itself.');
+
+            return;
+        }
+
+        const next = insertFormulaReference(
+            String(selectedResult.value),
+            reference,
+            formulaCaret.current.start,
+            formulaCaret.current.end,
+        );
+        formulaValue(next.value);
+        formulaCaret.current = { start: next.caret, end: next.caret };
+        window.requestAnimationFrame(() => {
+            formulaInput.current?.focus({ preventScroll: true });
+            formulaInput.current?.setSelectionRange(next.caret, next.caret);
         });
     }
     function addRow() {
@@ -790,6 +926,51 @@ export default function DupaBackups<
                         Delete backup
                     </Button>
                 )}
+                <div
+                    className="flex items-center gap-1 rounded border border-slate-300 bg-white p-0.5"
+                    role="group"
+                    aria-label="Backup worksheet zoom"
+                >
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 text-slate-700 hover:bg-slate-100"
+                        aria-label="Zoom out backup"
+                        disabled={zoom <= 50}
+                        onClick={() =>
+                            setZoom((current) => Math.max(50, current - 10))
+                        }
+                    >
+                        <ZoomOut className="size-4" />
+                    </Button>
+                    <span
+                        className="min-w-12 text-center text-xs tabular-nums"
+                        aria-live="polite"
+                    >
+                        {zoom}%
+                    </span>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 text-slate-700 hover:bg-slate-100"
+                        aria-label="Zoom in backup"
+                        disabled={zoom >= 150}
+                        onClick={() =>
+                            setZoom((current) => Math.min(150, current + 10))
+                        }
+                    >
+                        <ZoomIn className="size-4" />
+                    </Button>
+                    <button
+                        type="button"
+                        className="px-2 text-xs text-slate-600 hover:underline"
+                        onClick={() => setZoom(100)}
+                    >
+                        Reset
+                    </button>
+                </div>
                 <span className="ml-auto text-xs text-slate-600">
                     {changed
                         ? 'Unsaved changes'
@@ -805,7 +986,133 @@ export default function DupaBackups<
                     </span>
                 </span>
             </div>
-            <div className="min-h-0 flex-1 overflow-auto p-3 md:p-5">
+            {backup && (
+                <div className="z-20 shrink-0 border-b border-slate-300 bg-white px-3 py-2 shadow-sm">
+                    <div className="flex items-center gap-2 text-sm">
+                        <span
+                            className="max-w-64 min-w-24 truncate rounded border border-slate-300 bg-slate-50 px-2 py-1.5 text-xs"
+                            title={selectedAddress}
+                        >
+                            {selectedAddress}
+                        </span>
+                        <span className="font-serif text-emerald-800 italic">
+                            fx
+                        </span>
+                        <input
+                            ref={formulaInput}
+                            aria-label="Formula bar"
+                            className="h-8 min-w-0 flex-1 rounded border border-emerald-600 bg-white px-2 font-mono text-xs text-slate-950 outline-none focus:ring-1 focus:ring-emerald-600"
+                            disabled={
+                                busy ||
+                                disabled ||
+                                (!selection && !selectedResult)
+                            }
+                            value={selectedValue ?? ''}
+                            onSelect={(event) => {
+                                formulaCaret.current = {
+                                    start:
+                                        event.currentTarget.selectionStart ?? 0,
+                                    end: event.currentTarget.selectionEnd ?? 0,
+                                };
+                            }}
+                            onChange={(event) => {
+                                formulaValue(event.target.value);
+                                formulaCaret.current = {
+                                    start: event.target.selectionStart ?? 0,
+                                    end: event.target.selectionEnd ?? 0,
+                                };
+                                setReferenceMode(
+                                    Boolean(selectedResult) &&
+                                        event.target.value.startsWith('='),
+                                );
+                            }}
+                            onKeyDown={(event) => {
+                                if (
+                                    event.key === 'Enter' ||
+                                    event.key === 'Escape'
+                                ) {
+                                    event.preventDefault();
+                                    setReferenceMode(false);
+                                }
+                            }}
+                        />
+                        {selectedResult && (
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant={referenceMode ? 'default' : 'outline'}
+                                className={buttonClass}
+                                disabled={busy || disabled}
+                                onClick={() => {
+                                    if (
+                                        !String(selectedValue).startsWith('=')
+                                    ) {
+                                        formulaValue('=');
+                                        formulaCaret.current = {
+                                            start: 1,
+                                            end: 1,
+                                        };
+                                    }
+
+                                    setReferenceMode(!referenceMode);
+                                }}
+                            >
+                                {referenceMode ? 'Done picking' : 'Pick cells'}
+                            </Button>
+                        )}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-600">
+                        {referenceMode && selectedResult
+                            ? 'Click numeric cells, inputs, or other results to insert references at the cursor. Type operators (+ − × /) in the formula bar. Enter finishes picking.'
+                            : selectedResult
+                              ? 'Edit this result here. Type = or choose Pick cells to build a formula from worksheet cells.'
+                              : 'Select a worksheet cell or click a result below to view and edit its formula.'}
+                    </p>
+                    {resultReferences.length > 0 && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1 text-xs">
+                            <span className="text-slate-600">Sources:</span>
+                            {resultReferences.map((reference) => (
+                                <span
+                                    key={reference}
+                                    className="inline-flex items-center overflow-hidden rounded border border-blue-200 bg-blue-50 font-mono text-blue-800"
+                                >
+                                    <button
+                                        type="button"
+                                        className="px-1.5 py-0.5 hover:bg-blue-100"
+                                        title="Jump to source cell"
+                                        onClick={() =>
+                                            jumpToReference(reference)
+                                        }
+                                    >
+                                        {reference}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="border-l border-blue-200 px-1.5 py-0.5 font-sans font-semibold hover:bg-red-100 hover:text-red-800"
+                                        aria-label={`Remove ${reference} from formula`}
+                                        title="Remove this source from the formula"
+                                        disabled={busy || disabled}
+                                        onClick={() => {
+                                            const next = removeFormulaReference(
+                                                String(selectedValue ?? ''),
+                                                reference,
+                                            );
+                                            formulaValue(next);
+                                            formulaCaret.current = {
+                                                start: next.length,
+                                                end: next.length,
+                                            };
+                                        }}
+                                    >
+                                        ×
+                                    </button>
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+            <div className="min-h-0 flex-1 overflow-auto p-2">
                 {!currentBackups.length && (
                     <div className="mx-auto max-w-xl space-y-3 border border-slate-300 bg-white p-8 text-center">
                         <h3 className="text-lg font-semibold">
@@ -820,13 +1127,32 @@ export default function DupaBackups<
                 {backup && (
                     <fieldset
                         disabled={busy || disabled}
-                        className="mx-auto w-full max-w-[1400px] min-w-0 space-y-4 disabled:opacity-60"
+                        className="mx-auto w-full max-w-[1400px] min-w-0 space-y-2 disabled:opacity-60"
+                        style={{ zoom: zoom / 100 }}
+                        onPointerDownCapture={(event) => {
+                            if (
+                                referenceMode &&
+                                selectedResult &&
+                                referenceFromTarget(event.target)
+                            ) {
+                                event.preventDefault();
+                            }
+                        }}
+                        onClickCapture={(event) => {
+                            const reference = referenceFromTarget(event.target);
+
+                            if (referenceMode && selectedResult && reference) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                insertReference(reference);
+                            }
+                        }}
                     >
                         <div className="overflow-hidden border border-slate-400 bg-white shadow-sm">
-                            <div className="border-b border-slate-400 px-5 py-3 text-center">
+                            <div className="border-b border-slate-400 px-3 py-1.5 text-center">
                                 <Input
                                     aria-label="Backup title"
-                                    className="h-8 border-0 bg-transparent text-center text-lg font-bold text-slate-950 shadow-none"
+                                    className="h-7 border-0 bg-transparent text-center text-base font-bold text-slate-950 shadow-none"
                                     value={backup.name}
                                     onChange={(e) =>
                                         edit({
@@ -850,7 +1176,7 @@ export default function DupaBackups<
                                 </p>
                             </div>
                             <div
-                                className="border-b border-slate-300 px-4 py-2 text-xs"
+                                className="border-b border-slate-300 px-2 py-1 text-xs"
                                 aria-live="polite"
                             >
                                 <strong>
@@ -865,18 +1191,33 @@ export default function DupaBackups<
                             </div>
                             {backup.definition.inputs.length > 0 && (
                                 <details className="border-b border-slate-300 bg-amber-50/40">
-                                    <summary className="cursor-pointer px-4 py-2 text-sm font-medium">
+                                    <summary className="cursor-pointer px-2 py-1 text-xs font-medium">
                                         Inputs &amp; productivity (
                                         {backup.definition.inputs.length})
                                     </summary>
-                                    <div className="grid gap-x-6 gap-y-2 border-b border-slate-300 bg-amber-50/40 px-4 py-3 sm:grid-cols-2 lg:grid-cols-3">
+                                    <div className="grid gap-x-3 gap-y-1 border-b border-slate-300 bg-amber-50/40 px-2 py-2 sm:grid-cols-2 lg:grid-cols-3">
                                         {backup.definition.inputs.map(
                                             (v, i) => (
                                                 <label
                                                     key={i}
-                                                    className="flex items-center justify-between gap-2 text-sm"
+                                                    className="flex items-center justify-between gap-2 text-xs"
                                                 >
                                                     <span>
+                                                        {typeof v.value ===
+                                                            'string' &&
+                                                            v.value.startsWith(
+                                                                '=',
+                                                            ) && (
+                                                                <span
+                                                                    className="mr-2 inline-flex rounded bg-emerald-100 px-1 font-mono text-xs font-semibold text-emerald-800"
+                                                                    title={
+                                                                        v.value
+                                                                    }
+                                                                    aria-label={`Formula for ${v.label}: ${v.value}`}
+                                                                >
+                                                                    fx
+                                                                </span>
+                                                            )}
                                                         {v.label}
                                                         {v.unit
                                                             ? ` (${v.unit})`
@@ -884,7 +1225,8 @@ export default function DupaBackups<
                                                     </span>
                                                     <Input
                                                         aria-label={v.label}
-                                                        className="h-8 w-28 border-slate-300 bg-amber-50 text-right text-slate-950"
+                                                        data-backup-reference={`inputs.${v.key}`}
+                                                        className="h-7 w-24 border-slate-300 bg-amber-50 text-right text-slate-950"
                                                         value={v.value}
                                                         onChange={(e) =>
                                                             table({
@@ -909,57 +1251,30 @@ export default function DupaBackups<
                                     </div>
                                 </details>
                             )}
-                            <div className="flex items-center border-b border-slate-300 bg-slate-50 text-sm">
-                                <span className="w-28 shrink-0 border-r border-slate-300 px-2 py-2 font-mono text-xs whitespace-nowrap">
-                                    {selectedAddress}
-                                </span>
-                                <span className="px-3 font-serif text-emerald-800 italic">
-                                    fx
-                                </span>
-                                <input
-                                    aria-label="Formula bar"
-                                    className="h-9 min-w-0 flex-1 bg-white px-2 font-mono text-xs text-slate-950 outline-none focus:ring-2 focus:ring-emerald-600 focus:ring-inset"
-                                    disabled={!selection}
-                                    value={selectedValue ?? ''}
-                                    onChange={(e) => {
-                                        if (selection) {
-                                            cell(
-                                                selection.row,
-                                                selection.column,
-                                                e.target.value,
-                                            );
-                                        }
-                                    }}
-                                />
-                                <span className="hidden px-3 text-xs text-slate-500 md:block">
-                                    Tab → · Enter ↓ · Paste dimensions from
-                                    Excel
-                                </span>
-                            </div>
                             <div className="overflow-x-auto">
                                 <table
                                     ref={grid}
-                                    className="w-full table-fixed border-collapse text-sm"
+                                    className="w-full table-fixed border-collapse text-xs"
                                     style={{
                                         minWidth: Math.max(
-                                            720,
-                                            288 +
+                                            640,
+                                            240 +
                                                 backup.definition.columns
                                                     .length *
-                                                    112,
+                                                    88,
                                         ),
                                     }}
                                 >
                                     <colgroup>
-                                        <col className="w-10" />
-                                        <col className="w-52" />
+                                        <col className="w-8" />
+                                        <col className="w-44" />
                                         {backup.definition.columns.map((c) => (
                                             <col
                                                 key={c.key}
-                                                className="min-w-24"
+                                                className="min-w-20"
                                             />
                                         ))}
-                                        <col className="w-10" />
+                                        <col className="w-8" />
                                     </colgroup>
                                     <thead>
                                         <tr className="bg-slate-100 text-center text-xs text-slate-600">
@@ -983,14 +1298,14 @@ export default function DupaBackups<
                                             <th className="border border-slate-300 text-xs font-normal text-slate-500">
                                                 2
                                             </th>
-                                            <th className="border border-slate-300 px-2 py-2 text-left font-semibold">
+                                            <th className="border border-slate-300 px-1.5 py-1 text-left font-semibold">
                                                 Description
                                             </th>
                                             {backup.definition.columns.map(
                                                 (c) => (
                                                     <th
                                                         key={c.key}
-                                                        className="border border-slate-300 px-2 py-2 font-semibold"
+                                                        className="border border-slate-300 px-1.5 py-1 font-semibold"
                                                     >
                                                         {c.label}
                                                     </th>
@@ -1016,6 +1331,12 @@ export default function DupaBackups<
                                                         className={sheetInput}
                                                         value={r.label}
                                                         onFocus={() => {
+                                                            setResultSelection(
+                                                                null,
+                                                            );
+                                                            setReferenceMode(
+                                                                false,
+                                                            );
                                                             setSelection({
                                                                 row: r.key,
                                                                 column: 'description',
@@ -1055,10 +1376,11 @@ export default function DupaBackups<
                                                         return (
                                                             <td
                                                                 key={c.key}
-                                                                className={`border border-slate-300 ${formula ? 'bg-emerald-50' : 'bg-amber-50/30'}`}
+                                                                className={`border border-slate-300 ${resultReferences.includes(`rows.${r.key}.${c.key}`) ? 'bg-blue-100 ring-1 ring-blue-500 ring-inset' : formula ? 'bg-emerald-50' : 'bg-amber-50/30'}`}
                                                             >
                                                                 <input
                                                                     aria-label={`${r.label} ${c.label}`}
+                                                                    data-backup-reference={`rows.${r.key}.${c.key}`}
                                                                     data-row={
                                                                         ri
                                                                     }
@@ -1078,6 +1400,12 @@ export default function DupaBackups<
                                                                             : raw
                                                                     }
                                                                     onFocus={() => {
+                                                                        setResultSelection(
+                                                                            null,
+                                                                        );
+                                                                        setReferenceMode(
+                                                                            false,
+                                                                        );
                                                                         setSelection(
                                                                             {
                                                                                 row: r.key,
@@ -1179,9 +1507,12 @@ export default function DupaBackups<
                                                 <tr
                                                     key={v.key}
                                                     className={
-                                                        i === 0
-                                                            ? 'border-t-2 border-emerald-700 bg-emerald-50 font-semibold'
-                                                            : 'bg-white'
+                                                        selectedResult?.key ===
+                                                        v.key
+                                                            ? 'bg-blue-100 ring-1 ring-blue-500 ring-inset'
+                                                            : i === 0
+                                                              ? 'border-t-2 border-emerald-700 bg-emerald-50 font-semibold'
+                                                              : 'bg-white'
                                                     }
                                                 >
                                                     <th className="border border-slate-300 bg-slate-100 text-xs font-normal text-slate-500">
@@ -1196,19 +1527,49 @@ export default function DupaBackups<
                                                             backup.definition
                                                                 .columns.length,
                                                         )}
-                                                        className="border border-slate-300 px-3 py-2"
+                                                        className="border border-slate-300 px-2 py-1"
                                                     >
-                                                        {v.label}
+                                                        <button
+                                                            type="button"
+                                                            className="text-left hover:text-emerald-800 hover:underline"
+                                                            data-backup-reference={`outputs.${v.key}`}
+                                                            aria-label={`Edit formula for ${v.label}`}
+                                                            onClick={() =>
+                                                                selectResult(
+                                                                    v.key,
+                                                                )
+                                                            }
+                                                        >
+                                                            <span className="mr-2 rounded bg-emerald-100 px-1 font-mono text-xs text-emerald-800">
+                                                                fx
+                                                            </span>
+                                                            {v.label}
+                                                        </button>
                                                         {v.unit
                                                             ? ` (${v.unit})`
                                                             : ''}
                                                     </td>
-                                                    <td className="border border-slate-300 px-2 py-2 text-right font-semibold tabular-nums">
-                                                        {displayNumber(
-                                                            preview?.values[
-                                                                `${backup.key}.outputs.${v.key}`
-                                                            ],
-                                                        )}
+                                                    <td className="border border-slate-300 px-1.5 py-1 text-right font-semibold tabular-nums">
+                                                        <button
+                                                            type="button"
+                                                            className="w-full text-right hover:text-emerald-800"
+                                                            data-backup-reference={`outputs.${v.key}`}
+                                                            aria-label={`Edit result ${v.label}`}
+                                                            title={String(
+                                                                v.value,
+                                                            )}
+                                                            onClick={() =>
+                                                                selectResult(
+                                                                    v.key,
+                                                                )
+                                                            }
+                                                        >
+                                                            {displayNumber(
+                                                                preview?.values[
+                                                                    `${backup.key}.outputs.${v.key}`
+                                                                ],
+                                                            )}
+                                                        </button>
                                                     </td>
                                                     <td className="border border-slate-300" />
                                                 </tr>
@@ -1217,7 +1578,7 @@ export default function DupaBackups<
                                     </tfoot>
                                 </table>
                             </div>
-                            <div className="border-t border-slate-300 px-3 py-2">
+                            <div className="border-t border-slate-300 px-2 py-1">
                                 <Button
                                     type="button"
                                     variant="outline"
@@ -1255,7 +1616,7 @@ export default function DupaBackups<
                             {backup.definition.outputs.map((v) => (
                                 <div
                                     key={v.key}
-                                    className="flex flex-wrap items-center gap-2 text-sm"
+                                    className="flex flex-wrap items-center gap-2 text-xs"
                                 >
                                     <span className="min-w-48 flex-1">
                                         {v.label}:{' '}

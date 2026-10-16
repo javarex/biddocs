@@ -20,7 +20,6 @@ class DupaBackupController extends Controller
     public function excludeTemplate(Request $request, ProjectItem $dupa, DupaBackupTemplate $template): JsonResponse
     {
         Gate::authorize('update', $dupa->section->project);
-        abort_unless((int) $template->project_id === (int) $dupa->section->project_id, 404);
         $data = $request->validate(['excluded' => ['required', 'boolean']]);
         $template->setExcludedFor($request->user()->id, $data['excluded']);
 

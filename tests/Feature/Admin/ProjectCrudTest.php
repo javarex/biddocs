@@ -64,6 +64,56 @@ class ProjectCrudTest extends TestCase
         $this->assertDatabaseHas('projects', ['id' => $project->id, 'location' => 'Updated location']);
     }
 
+    public function test_project_form_saves_miscellaneous_and_a_single_pol_charge(): void
+    {
+        $admin = User::factory()->create(['is_super_admin' => true]);
+        $this->linkPreparer($admin);
+        $details = ['project_name' => 'POW1 charges', 'location' => 'Test', 'contract_duration' => 60];
+        $row = ['estimate_type' => 'ADD', 'description' => 'Power Bill Deposit',
+            'unit' => 'l.s.', 'amount' => 300000, 'multiplier' => 1];
+        $this->actingAs($admin)->post(route('admin.projects.store'), $details + [
+            'pol' => 100, 'miscellaneous' => [$row],
+        ])->assertSessionHasNoErrors();
+        $project = Project::query()->sole();
+        $this->assertDatabaseHas('miscellaneous', $row + ['project_id' => $project->id]);
+        $this->actingAs($admin)->get(route('admin.projects.edit', $project))->assertInertia(
+            fn (Assert $page) => $page->where('project.miscellaneous.0.description', 'Power Bill Deposit')
+        );
+
+        // Historical side-specific POL must not duplicate the project charge.
+        $project->estimateSettings()->where('estimate_type', 'NON_ADD')->update(['pol_amount' => 999]);
+        $totals = app(DupaEstimateService::class)->projectTotals($project);
+        $this->assertSame(300100.0, $totals['ADD']['grand_total']);
+        $this->assertSame(0.0, $totals['NON_ADD']['pol_amount']);
+
+        $row['amount'] = 200;
+        $this->actingAs($admin)->put(route('admin.projects.update', $project), $details + [
+            'pol' => 150, 'miscellaneous' => [$row],
+        ])->assertSessionHasNoErrors();
+        $this->assertSame(1, $project->miscellaneous()->count());
+        $this->assertDatabaseHas('miscellaneous', $row + ['project_id' => $project->id]);
+        $this->assertDatabaseHas('project_estimate_settings', [
+            'project_id' => $project->id, 'estimate_type' => 'NON_ADD', 'pol_amount' => 0,
+        ]);
+        $this->actingAs($admin)->put(route('admin.projects.update', $project), $details + [
+            'miscellaneous' => [['description' => 'Invalid', 'amount' => -1]],
+        ])->assertSessionHasErrors(['miscellaneous.0.amount']);
+        $this->assertSame(1, $project->miscellaneous()->count());
+        $this->actingAs($admin)->put(route('admin.projects.update', $project), $details)
+            ->assertSessionHasNoErrors();
+        $this->assertSame(1, $project->miscellaneous()->count());
+        $this->assertSame(150.0, (float) $project->fresh()->pol);
+        $this->actingAs($admin)->get(route('admin.projects.dupa', $project))->assertInertia(
+            fn (Assert $page) => $page->component('admin/projects/dupa')
+                ->where('chargeData.pol', fn ($value) => (float) $value === 150.0)
+                ->where('chargeData.miscellaneous.0.description', 'Power Bill Deposit')
+                ->where('chargeData.totals.ADD.pol_amount', fn ($value) => (float) $value === 150.0)
+        );
+        $this->actingAs($admin)->put(route('admin.projects.update', $project), $details + ['miscellaneous' => []])
+            ->assertSessionHasNoErrors();
+        $this->assertSame(0, $project->miscellaneous()->count());
+    }
+
     public function test_project_code_is_optional_and_project_classification_is_constrained(): void
     {
         $admin = User::factory()->create(['is_super_admin' => true]);
@@ -448,10 +498,10 @@ class ProjectCrudTest extends TestCase
         ]];
 
         $this->actingAs($admin)->put(route('admin.projects.estimate-settings.update', $project), [
-            'settings' => $settings, 'miscellaneous' => $miscellaneous,
+            'pol' => 125, 'settings' => $settings, 'miscellaneous' => $miscellaneous,
         ])->assertSessionHasNoErrors();
         $this->assertDatabaseHas('project_estimate_settings', [
-            'project_id' => $project->id, 'estimate_type' => 'ADD', 'pol_amount' => 100,
+            'project_id' => $project->id, 'estimate_type' => 'ADD', 'pol_amount' => 125,
         ]);
         $this->assertDatabaseHas('miscellaneous', [
             'project_id' => $project->id, 'description' => 'Permit', 'amount' => 30,

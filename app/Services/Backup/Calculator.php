@@ -167,6 +167,10 @@ class Calculator
             $resolve($path);
         }
         $bindings = $document['bindings'] ?? [];
+        // Resolve person-count bindings before a days formula reads its own row.
+        usort($bindings, fn ($a, $b) => (int) (($b['kind'] ?? '') === 'labors' && ($b['field'] ?? '') === 'no_of_person')
+            <=> (int) (($a['kind'] ?? '') === 'labors' && ($a['field'] ?? '') === 'no_of_person'));
+
         $used = [];
         $changes = [];
         foreach ($bindings as $binding) {
@@ -183,7 +187,20 @@ class Calculator
             }
             $used[$target] = true;
             $formula = $binding['formula'] ?? '';
-            $value = (new Formula)->evaluate($formula, function (string $ref) use ($exports, &$resolve): float {
+            $value = (new Formula)->evaluate($formula, function (string $ref) use ($exports, &$resolve, $kind, $field, $uuid, $estimate): float {
+                if ($ref === 'row.no_of_person' && $kind === 'labors' && $field === 'no_of_days') {
+                    $index = array_search($uuid, array_column($estimate['labors'] ?? [], 'row_uuid'), true);
+                    if ($index === false) {
+                        throw new InvalidArgumentException('The labor row for auto-computed days no longer exists.');
+                    }
+                    $persons = (float) $estimate['labors'][$index]['no_of_person'];
+                    if (! is_finite($persons) || $persons <= 0) {
+                        throw new InvalidArgumentException('No. of Persons must be greater than zero for auto-computed labor days.');
+                    }
+
+                    return $persons;
+                }
+
                 if (! isset($exports[$ref])) {
                     throw new InvalidArgumentException("Select an exported backup variable: {$ref}.");
                 }

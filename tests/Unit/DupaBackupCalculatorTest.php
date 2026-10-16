@@ -237,4 +237,50 @@ class DupaBackupCalculatorTest extends TestCase
         $document['bindings'] = [];
         $this->assertSame([], Usage::referencedKeys($document));
     }
+
+    public function test_auto_labor_days_follow_the_actual_row_person_count_and_productivity(): void
+    {
+        $doc = $this->namedDocument([], [['key' => 'manual_volume', 'label' => 'Manual excavation', 'value' => 62.69]]);
+        $doc['bindings'] = [['kind' => 'labors', 'row_uuid' => 'labor', 'field' => 'no_of_days',
+            'formula' => '=ROUNDUP(sample.outputs.manual_volume/1.5/row.no_of_person,0)']];
+        $calculator = new Calculator;
+        $estimate = $this->estimate();
+        $this->assertSame(11.0, $calculator->preview($doc, $estimate)['estimate']['labors'][0]['no_of_days']);
+        $estimate['labors'][0]['no_of_person'] = 5;
+        $this->assertSame(9.0, $calculator->preview($doc, $estimate)['estimate']['labors'][0]['no_of_days']);
+        $doc['bindings'][0]['formula'] = '=ROUNDUP(sample.outputs.manual_volume/2/row.no_of_person,0)';
+        $this->assertSame(7.0, $calculator->preview($doc, $estimate)['estimate']['labors'][0]['no_of_days']);
+        $this->assertSame(4, $this->estimate()['labors'][0]['no_of_person']);
+    }
+
+    public function test_auto_labor_days_use_bound_person_count_regardless_of_binding_order(): void
+    {
+        $doc = $this->namedDocument([], [['key' => 'volume', 'value' => 60], ['key' => 'persons', 'value' => 5]]);
+        $doc['bindings'] = [
+            ['kind' => 'labors', 'row_uuid' => 'labor', 'field' => 'no_of_days', 'formula' => '=ROUNDUP(sample.outputs.volume/1.5/row.no_of_person,0)'],
+            ['kind' => 'labors', 'row_uuid' => 'labor', 'field' => 'no_of_person', 'formula' => '=sample.outputs.persons'],
+        ];
+        $result = (new Calculator)->preview($doc, $this->estimate());
+        $this->assertSame(5.0, $result['estimate']['labors'][0]['no_of_person']);
+        $this->assertSame(8.0, $result['estimate']['labors'][0]['no_of_days']);
+    }
+
+    public function test_auto_labor_days_reject_zero_person_count(): void
+    {
+        $doc = $this->namedDocument([], [['key' => 'volume', 'value' => 60]]);
+        $doc['bindings'] = [['kind' => 'labors', 'row_uuid' => 'labor', 'field' => 'no_of_days', 'formula' => '=ROUNDUP(sample.outputs.volume/1.5/row.no_of_person,0)']];
+        $estimate = $this->estimate();
+        $estimate['labors'][0]['no_of_person'] = 0;
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('No. of Persons must be greater than zero');
+        (new Calculator)->preview($doc, $estimate);
+    }
+
+    public function test_auto_labor_row_reference_cannot_be_used_for_other_binding_targets(): void
+    {
+        $doc = $this->namedDocument([], [['key' => 'volume', 'value' => 60]]);
+        $doc['bindings'] = [['kind' => 'equipment', 'row_uuid' => 'excavator', 'field' => 'no_of_days', 'formula' => '=ROUNDUP(sample.outputs.volume/1.5/row.no_of_person,0)']];
+        $this->expectException(InvalidArgumentException::class);
+        (new Calculator)->preview($doc, $this->estimate());
+    }
 }
