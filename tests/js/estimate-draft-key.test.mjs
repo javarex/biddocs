@@ -42,6 +42,7 @@ const initial = () => ({
     ],
     items: [],
 });
+
 for (const side of ['ADD', 'NON_ADD']) {
     for (const kind of ['labors', 'equipment']) {
         test(`${side}: adding then removing ${kind} restores saved state`, () => {
@@ -59,6 +60,7 @@ for (const side of ['ADD', 'NON_ADD']) {
         });
     }
 }
+
 test('removing a saved row stays dirty; recalculated metadata does not', () => {
     const saved = initial();
     const draft = structuredClone(saved);

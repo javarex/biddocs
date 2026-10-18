@@ -46,17 +46,17 @@ export function AppSidebar() {
         auth.user?.is_super_admin === true ||
         auth.permissions.includes(permission);
     const administrationItems = visibleNavItems([
-        can('users.view')
+        auth.user?.is_super_admin
             ? { title: 'Users', href: '/admin/users', icon: Users }
             : null,
-        can('roles.view')
+        auth.user?.is_super_admin
             ? {
                   title: 'Roles & Permissions',
                   href: '/admin/roles',
                   icon: Shield,
               }
             : null,
-        can('settings.view')
+        auth.user?.is_super_admin
             ? {
                   title: 'System Settings',
                   href: '/admin/settings',

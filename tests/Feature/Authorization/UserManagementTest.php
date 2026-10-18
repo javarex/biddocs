@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Authorization;
 
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class UserManagementTest extends TestCase
@@ -54,6 +56,42 @@ class UserManagementTest extends TestCase
         ])->assertRedirect();
 
         $this->assertTrue(Hash::check('new-password', $user->refresh()->password));
+    }
+
+    public function test_editing_a_user_loads_and_preserves_their_assigned_roles(): void
+    {
+        $admin = $this->admin();
+        $user = User::factory()->create();
+        $role = Role::query()->create(['name' => 'Estimator', 'slug' => 'estimator']);
+        $user->roles()->attach($role);
+
+        $this->actingAs($admin)->get(route('admin.users.edit', $user))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('user.roles.0.id', $role->id)
+            ->where('user.roles.0.name', 'Estimator'));
+
+        $this->put(route('admin.users.update', $user), [
+            'name' => 'Updated Estimator', 'username' => $user->username, 'email' => $user->email,
+            'roles' => [$role->id],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('role_user', ['user_id' => $user->id, 'role_id' => $role->id]);
+    }
+
+    public function test_numeric_boolean_values_cannot_remove_the_final_active_super_admin(): void
+    {
+        $admin = $this->admin();
+
+        foreach ([0, '0', false] as $value) {
+            foreach (['is_active', 'is_super_admin'] as $flag) {
+                $this->actingAs($admin)->put(route('admin.users.update', $admin), [
+                    'name' => $admin->name, 'username' => $admin->username, 'email' => $admin->email,
+                    $flag => $value,
+                ])->assertSessionHasErrors('user');
+            }
+        }
+
+        $this->assertDatabaseHas('users', ['id' => $admin->id, 'is_active' => true, 'is_super_admin' => true]);
     }
 
     public function test_self_deletion_is_prevented(): void

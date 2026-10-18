@@ -20,6 +20,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
 class ProjectCrudTest extends TestCase
@@ -534,6 +535,7 @@ class ProjectCrudTest extends TestCase
         ]);
     }
 
+    #[Group('performance')]
     public function test_item_estimate_uses_catalog_values_and_exposes_project_groups(): void
     {
         $admin = User::factory()->create(['is_super_admin' => true]);
@@ -568,6 +570,8 @@ class ProjectCrudTest extends TestCase
         ]);
         app(DupaEstimateService::class)->initialize($dupa);
 
+        DB::enableQueryLog();
+        DB::flushQueryLog();
         $this->actingAs($admin)->put(route('admin.dupas.estimates.update', [$dupa, 'ADD']), [
             'quantity' => 1, 'ocm_percentage' => 0, 'profit_percentage' => 0, 'vat_percentage' => 0,
             'labors' => [], 'equipment' => [],
@@ -575,14 +579,25 @@ class ProjectCrudTest extends TestCase
                 'item_id' => $item->id, 'qty' => 2, 'group' => ' A. CARPENTRY WORKS ',
                 'is_included' => true, 'designation' => 'Changed in browser',
                 'unit' => 'wrong', 'unit_cost' => 1,
+            ], [
+                'item_id' => DB::table('items')->where('itemcode', 'STEEL-1')->value('id'),
+                'qty' => 1, 'is_included' => true,
+            ], [
+                'item_id' => DB::table('items')->where('itemcode', 'TILE-1')->value('id'),
+                'qty' => 1, 'is_included' => true,
             ]],
         ])->assertSessionHasNoErrors();
+
+        $this->assertCount(1, array_filter(DB::getQueryLog(), fn (array $query): bool => str_contains($query['query'], 'prices')));
+        DB::disableQueryLog();
 
         $this->assertDatabaseHas('material_dupa', [
             'dupa_id' => $dupa->id, 'item_id' => $item->id,
             'designation' => 'Coco lumber', 'unit' => 'bd.ft.',
             'qty' => 2, 'unit_cost' => 85.25, 'group' => 'A. CARPENTRY WORKS',
         ]);
+        $this->assertDatabaseHas('material_dupa', ['dupa_id' => $dupa->id, 'designation' => 'Steel rods', 'unit_cost' => 44]);
+        $this->assertDatabaseHas('material_dupa', ['dupa_id' => $dupa->id, 'designation' => 'Tiles', 'unit_cost' => 80]);
         DB::enableQueryLog();
         DB::flushQueryLog();
         $this->actingAs($admin)->get(route('admin.dupas.edit', $dupa))

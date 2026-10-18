@@ -30,6 +30,9 @@ class ProjectController extends Controller
         Gate::authorize('projects.view');
         $search = trim((string) $request->string('search'));
         $projects = Project::query()->withCount(['sections', 'items'])
+            ->with(['importHistories' => fn ($query) => $query
+                ->whereIn('status', ['completed', 'completed_with_errors'])
+                ->select(['id', 'project_id', 'imported_by', 'status'])])
             ->when($search !== '', fn ($query) => $query->where(function ($query) use ($search): void {
                 $query->where('project_code', 'like', "%{$search}%")
                     ->orWhere('project_name', 'like', "%{$search}%")

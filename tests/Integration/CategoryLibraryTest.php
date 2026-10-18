@@ -4,26 +4,14 @@ namespace Tests\Integration;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Foundation\Testing\TestCase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\TestCase;
 
 class CategoryLibraryTest extends TestCase
 {
     use RefreshDatabase;
-
-    protected function beforeRefreshingDatabase()
-    {
-        $usesMemorySqlite = config('database.default') === 'sqlite'
-            && config('database.connections.sqlite.database') === ':memory:';
-        $usesDisposableMysql = config('database.default') === 'mysql'
-            && str_ends_with((string) config('database.connections.mysql.database'), '_tests');
-
-        if (! $usesMemorySqlite && ! $usesDisposableMysql) {
-            throw new \LogicException('Category tests require in-memory SQLite or a disposable MySQL database ending in _tests.');
-        }
-    }
 
     protected function setUp(): void
     {

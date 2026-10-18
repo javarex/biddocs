@@ -72,11 +72,23 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 
     public function hasRole(string $role): bool
     {
+        if ($this->relationLoaded('roles')) {
+            return $this->roles->contains('slug', $role);
+        }
+
         return $this->roles()->where('slug', $role)->exists();
     }
 
     public function hasPermissionTo(string $permission): bool
     {
+        if (! $this->is_active) {
+            return false;
+        }
+
+        if ($this->relationLoaded('roles') && $this->roles->every(fn (Role $role): bool => $role->relationLoaded('permissions'))) {
+            return $this->roles->contains(fn (Role $role): bool => $role->permissions->contains('slug', $permission));
+        }
+
         return $this->roles()->whereHas('permissions', fn ($query) => $query->where('slug', $permission))->exists();
     }
 

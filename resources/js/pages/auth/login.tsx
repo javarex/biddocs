@@ -41,7 +41,10 @@ export default function Login({ status, canResetPassword }: Props) {
                         <input type="hidden" name="_token" value={csrf_token} />
 
                         <div className="space-y-1.5">
-                            <Label htmlFor="login" className="text-xs font-semibold text-[#374151] dark:text-slate-300">
+                            <Label
+                                htmlFor="login"
+                                className="text-xs font-semibold text-[#374151] dark:text-slate-300"
+                            >
                                 Username or email
                             </Label>
                             <Input
@@ -60,11 +63,18 @@ export default function Login({ status, canResetPassword }: Props) {
 
                         <div className="space-y-1.5">
                             <div className="flex items-center justify-between">
-                                <Label htmlFor="password" className="text-xs font-semibold text-[#374151] dark:text-slate-300">
+                                <Label
+                                    htmlFor="password"
+                                    className="text-xs font-semibold text-[#374151] dark:text-slate-300"
+                                >
                                     Password
                                 </Label>
                                 {canResetPassword && (
-                                    <TextLink href={request()} className="text-xs text-[#592701] hover:text-[#211401]" tabIndex={5}>
+                                    <TextLink
+                                        href={request()}
+                                        className="text-xs text-[#592701] hover:text-[#211401]"
+                                        tabIndex={5}
+                                    >
                                         Forgot password?
                                     </TextLink>
                                 )}
@@ -82,8 +92,16 @@ export default function Login({ status, canResetPassword }: Props) {
                         </div>
 
                         <div className="flex items-center gap-2">
-                            <Checkbox id="remember" name="remember" tabIndex={3} className="border-[#D1D5DB]" />
-                            <Label htmlFor="remember" className="cursor-pointer text-xs text-[#6B7280] dark:text-slate-400">
+                            <Checkbox
+                                id="remember"
+                                name="remember"
+                                tabIndex={3}
+                                className="border-[#D1D5DB]"
+                            />
+                            <Label
+                                htmlFor="remember"
+                                className="cursor-pointer text-xs text-[#6B7280] dark:text-slate-400"
+                            >
                                 Remember me for 30 days
                             </Label>
                         </div>

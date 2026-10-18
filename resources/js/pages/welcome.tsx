@@ -46,7 +46,6 @@ export default function Welcome() {
             `}</style>
 
             <div className="flex h-screen flex-col overflow-hidden bg-gradient-to-br from-[#211401] via-[#3A1A00] to-[#592701]">
-
                 {/* ── NAVBAR ──────────────────────────────── */}
                 <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-6 lg:px-10">
                     <div className="flex items-center gap-3">
@@ -54,8 +53,12 @@ export default function Welcome() {
                             <Building2 className="h-4 w-4 text-white" />
                         </div>
                         <div className="leading-tight">
-                            <p className="font-heading text-sm font-bold text-white">BDS</p>
-                            <p className="hidden text-[10px] text-yellow-300 md:block">Bidding Documents System</p>
+                            <p className="font-heading text-sm font-bold text-white">
+                                BDS
+                            </p>
+                            <p className="hidden text-[10px] text-yellow-300 md:block">
+                                Bidding Documents System
+                            </p>
                         </div>
                     </div>
 
@@ -79,35 +82,47 @@ export default function Welcome() {
                 {/* ── MAIN ────────────────────────────────── */}
                 <main className="relative flex flex-1 items-center overflow-hidden">
                     {/* Decorative circles */}
-                    <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+                    <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0"
+                    >
                         <div className="absolute -top-32 right-0 h-[480px] w-[480px] rounded-full bg-white/5" />
                         <div className="absolute -bottom-16 -left-16 h-[300px] w-[300px] rounded-full bg-white/5" />
                         <div className="absolute top-1/2 left-[58%] h-[200px] w-[200px] -translate-y-1/2 rounded-full bg-yellow-300/10" />
                     </div>
 
                     <div className="relative mx-auto grid w-full max-w-6xl items-center gap-10 px-6 lg:grid-cols-2 lg:px-10">
-
                         {/* Left — headline */}
                         <div className="text-white">
                             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-yellow-100">
                                 <Zap className="h-3 w-3" />
                                 Philippine Government Bidding Documents Platform
                             </div>
-                            <h1 className="font-heading mb-3 text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl lg:text-[2.8rem]">
-                                Bidding Documents<br />
-                                <span className="text-[#ECC925]">Made Simple</span>
+                            <h1 className="mb-3 font-heading text-3xl leading-tight font-extrabold tracking-tight sm:text-4xl lg:text-[2.8rem]">
+                                Bidding Documents
+                                <br />
+                                <span className="text-[#ECC925]">
+                                    Made Simple
+                                </span>
                             </h1>
                             <p className="mb-5 max-w-md text-sm leading-relaxed text-yellow-100/90 md:text-base">
-                                Securely manage bidding documents, procurement opportunities,
-                                supplier participation, and bid evaluation in one centralized platform.
+                                Securely manage bidding documents, procurement
+                                opportunities, supplier participation, and bid
+                                evaluation in one centralized platform.
                             </p>
                             <div className="flex flex-wrap items-center gap-5">
                                 {[
-                                    { Icon: Shield,      label: 'RA 9184 Compliant' },
+                                    {
+                                        Icon: Shield,
+                                        label: 'RA 9184 Compliant',
+                                    },
                                     { Icon: ShieldCheck, label: 'SSL Secured' },
-                                    { Icon: Star,        label: 'ISO 27001' },
+                                    { Icon: Star, label: 'ISO 27001' },
                                 ].map(({ Icon, label }) => (
-                                    <div key={label} className="flex items-center gap-1.5 text-xs text-yellow-200">
+                                    <div
+                                        key={label}
+                                        className="flex items-center gap-1.5 text-xs text-yellow-200"
+                                    >
                                         <Icon className="h-3.5 w-3.5" /> {label}
                                     </div>
                                 ))}
@@ -122,8 +137,12 @@ export default function Welcome() {
                                         <Lock className="h-4 w-4 text-white" />
                                     </div>
                                     <div>
-                                        <h2 className="font-heading text-base font-bold text-[#111827]">Sign In</h2>
-                                        <p className="text-xs text-[#6B7280]">Access your BDS account securely</p>
+                                        <h2 className="font-heading text-base font-bold text-[#111827]">
+                                            Sign In
+                                        </h2>
+                                        <p className="text-xs text-[#6B7280]">
+                                            Access your BDS account securely
+                                        </p>
                                     </div>
                                 </div>
 
@@ -134,10 +153,17 @@ export default function Welcome() {
                                 >
                                     {({ processing, errors }) => (
                                         <>
-                                            <input type="hidden" name="_token" value={csrf_token} />
+                                            <input
+                                                type="hidden"
+                                                name="_token"
+                                                value={csrf_token}
+                                            />
 
                                             <div className="space-y-1">
-                                                <Label htmlFor="h-login" className="text-xs font-semibold text-[#374151]">
+                                                <Label
+                                                    htmlFor="h-login"
+                                                    className="text-xs font-semibold text-[#374151]"
+                                                >
                                                     Username or email
                                                 </Label>
                                                 <Input
@@ -150,15 +176,23 @@ export default function Welcome() {
                                                     placeholder="Enter your username or email"
                                                     className="h-9 rounded-xl border-[#D1D5DB] bg-[#F9FAFB] text-sm focus:border-[#ECC925]"
                                                 />
-                                                <InputError message={errors.login} />
+                                                <InputError
+                                                    message={errors.login}
+                                                />
                                             </div>
 
                                             <div className="space-y-1">
                                                 <div className="flex items-center justify-between">
-                                                    <Label htmlFor="h-password" className="text-xs font-semibold text-[#374151]">
+                                                    <Label
+                                                        htmlFor="h-password"
+                                                        className="text-xs font-semibold text-[#374151]"
+                                                    >
                                                         Password
                                                     </Label>
-                                                    <TextLink href={request()} className="text-xs text-[#592701] hover:text-[#211401]">
+                                                    <TextLink
+                                                        href={request()}
+                                                        className="text-xs text-[#592701] hover:text-[#211401]"
+                                                    >
                                                         Forgot password?
                                                     </TextLink>
                                                 </div>
@@ -170,12 +204,21 @@ export default function Welcome() {
                                                     placeholder="Enter your password"
                                                     className="h-9 rounded-xl border-[#D1D5DB] bg-[#F9FAFB] text-sm focus:border-[#ECC925]"
                                                 />
-                                                <InputError message={errors.password} />
+                                                <InputError
+                                                    message={errors.password}
+                                                />
                                             </div>
 
                                             <div className="flex items-center gap-2">
-                                                <Checkbox id="h-remember" name="remember" className="border-[#D1D5DB]" />
-                                                <Label htmlFor="h-remember" className="cursor-pointer text-xs text-[#6B7280]">
+                                                <Checkbox
+                                                    id="h-remember"
+                                                    name="remember"
+                                                    className="border-[#D1D5DB]"
+                                                />
+                                                <Label
+                                                    htmlFor="h-remember"
+                                                    className="cursor-pointer text-xs text-[#6B7280]"
+                                                >
                                                     Remember me for 30 days
                                                 </Label>
                                             </div>
@@ -185,7 +228,9 @@ export default function Welcome() {
                                                 disabled={processing}
                                                 className="h-9 w-full rounded-xl bg-[#ECC925] text-sm font-semibold text-[#211401] hover:bg-[#D4B420]"
                                             >
-                                                {processing && <Spinner className="mr-2 h-4 w-4" />}
+                                                {processing && (
+                                                    <Spinner className="mr-2 h-4 w-4" />
+                                                )}
                                                 Sign In to BDS
                                             </Button>
                                         </>
@@ -194,19 +239,19 @@ export default function Welcome() {
 
                                 <div className="mt-4 flex items-center justify-center gap-1.5 text-[10px] text-[#9CA3AF]">
                                     <ShieldCheck className="h-3.5 w-3.5 text-green-500" />
-                                    Secure Login &nbsp;•&nbsp; SSL Protected &nbsp;•&nbsp; 256-bit Encryption
+                                    Secure Login &nbsp;•&nbsp; SSL Protected
+                                    &nbsp;•&nbsp; 256-bit Encryption
                                 </div>
                             </div>
                         </div>
-
                     </div>
                 </main>
 
                 {/* ── FOOTER STRIP ────────────────────────── */}
                 <footer className="shrink-0 border-t border-white/10 py-2.5 text-center text-[10px] text-yellow-400/60">
-                    &copy; {new Date().getFullYear()} Bidding of Documents System &mdash; Office of the Procurement Service
+                    &copy; {new Date().getFullYear()} Bidding of Documents
+                    System &mdash; Office of the Procurement Service
                 </footer>
-
             </div>
         </>
     );

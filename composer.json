@@ -72,11 +72,12 @@
         "types:check": [
             "phpstan analyse"
         ],
+        "test:isolated": "bash scripts/test-isolated.sh",
+        "test:performance": "bash scripts/test-isolated.sh --group=performance",
         "test": [
-            "@php artisan config:clear --ansi",
             "@lint:check",
             "@types:check",
-            "@php artisan test"
+            "@test:isolated"
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",

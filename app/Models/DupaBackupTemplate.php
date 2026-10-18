@@ -11,6 +11,7 @@ class DupaBackupTemplate extends Model
 {
     protected $guarded = [];
 
+    /** @return BelongsTo<Project, $this> */
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
@@ -26,11 +27,16 @@ class DupaBackupTemplate extends Model
         }
     }
 
+    /** @return BelongsTo<User, $this> */
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /**
+     * @param  Builder<DupaBackupTemplate>  $query
+     * @return Builder<DupaBackupTemplate>
+     */
     public function scopeVisibleTo(Builder $query, int $userId): Builder
     {
         return $query->whereNotExists(fn ($excluded) => $excluded->selectRaw('1')

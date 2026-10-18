@@ -13,8 +13,8 @@ export default function AutoRowTextarea({
         const element = ref.current;
 
         if (!element) {
-return;
-}
+            return;
+        }
 
         const resize = () => {
             element.style.height = 'auto';

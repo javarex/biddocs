@@ -36,7 +36,15 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
 
-        Gate::before(function (?User $user): ?bool {
+        Gate::before(function (?User $user, string $ability, array $arguments): ?bool {
+            if ($user !== null && ! $user->is_active) {
+                return false;
+            }
+
+            if ($ability === 'items.create' || ($ability === 'create' && ($arguments[0] ?? null) === Item::class)) {
+                return false;
+            }
+
             return $user?->is_super_admin ? true : null;
         });
         Gate::policy(User::class, UserPolicy::class);
@@ -50,6 +58,12 @@ class AppServiceProvider extends ServiceProvider
             'libraries.create',
             'libraries.update',
             'libraries.delete',
+            'items.create',
+            'items.update',
+            'items.delete',
+            'items.prices.encode',
+            'items.sync',
+            'categories.sync',
             'dashboard.view',
             'users.view',
             'users.create',

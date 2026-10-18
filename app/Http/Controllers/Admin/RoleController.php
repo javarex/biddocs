@@ -22,7 +22,7 @@ class RoleController extends Controller
         Gate::authorize('viewAny', Role::class);
 
         return Inertia::render('admin/roles/index', [
-            'roles' => Role::query()->withCount('users')->with('permissions')->orderBy('name')->get(),
+            'roles' => Role::query()->withCount(['users', 'permissions'])->orderBy('name')->get(),
         ]);
     }
 

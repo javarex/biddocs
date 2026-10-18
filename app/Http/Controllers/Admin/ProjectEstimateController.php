@@ -12,6 +12,7 @@ use App\Models\Project;
 use App\Models\ProjectItem;
 use App\Services\Backup\ExcavationTemplate;
 use App\Services\DupaEstimateService;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -76,10 +77,11 @@ class ProjectEstimateController extends Controller
                     'equipment' => Equipment::query()->orderBy('equipment')->get(['id', 'equipment', 'rental']),
                     'items' => $this->pricedItems(),
                 ],
-                'syncCategories' => Gate::allows('libraries.create')
+                'syncCategories' => Gate::allows('sync', Item::class)
                     ? DB::table('categories')->orderBy('CATEGORY_DESCRIPTION')->get(['IDCATEGORY', 'CATEGORY_DESCRIPTION', 'fccode'])
                     : [],
-                'canSyncItems' => Gate::allows('libraries.create') && Gate::allows('libraries.update'),
+                'canSyncItems' => Gate::allows('sync', Item::class),
+                'canSyncPrices' => Gate::allows('encodePrices', Item::class),
                 'syncMessage' => $request->session()->get('item_sync'),
                 'itemGroups' => DB::table('material_dupa')
                     ->join('dupas', 'dupas.id', '=', 'material_dupa.dupa_id')
@@ -225,35 +227,17 @@ class ProjectEstimateController extends Controller
      */
     private function hydrateCatalogItems(array $rows): array
     {
-        $items = Item::query()
-            ->whereIn('id', collect($rows)->pluck('item_id')->unique())
-            ->get(['id', 'itemcode', 'description', 'unit'])
-            ->keyBy('id');
-        $latestPrices = DB::table('prices')
-            ->whereIn('itemcode', $items->pluck('itemcode'))
-            ->orderBy('itemcode')
-            ->orderByDesc('effective_from')
-            ->orderByDesc('id')
-            ->get(['itemcode', 'price'])
-            ->unique('itemcode')
-            ->keyBy('itemcode');
-        $activePrices = DB::table('prices')
-            ->whereIn('itemcode', $items->pluck('itemcode'))
-            ->where('effective_from', '<=', now()->toDateString())
-            ->where(fn ($query) => $query->whereNull('effective_to')->orWhere('effective_to', '>=', now()->toDateString()))
-            ->orderBy('itemcode')
-            ->orderByDesc('effective_from')
-            ->orderByDesc('id')
-            ->get(['itemcode', 'price'])
-            ->unique('itemcode')
-            ->keyBy('itemcode');
+        if ($rows === []) {
+            return [];
+        }
 
-        return array_values(collect($rows)->map(function (array $row, int $index) use ($items, $activePrices, $latestPrices): array {
+        $items = $this->pricedItemsQuery()
+            ->whereIn('items.id', collect($rows)->pluck('item_id')->unique())
+            ->get()->keyBy('id');
+
+        return array_values(collect($rows)->map(function (array $row, int $index) use ($items): array {
             $item = $items->get((int) $row['item_id']);
-            $price = $item
-                ? ($activePrices->get($item->itemcode) ?? $latestPrices->get($item->itemcode))
-                : null;
-            if (! $item || ! $price) {
+            if (! $item || $item->catalog_price === null) {
                 throw ValidationException::withMessages([
                     "items.{$index}.item_id" => 'The selected item does not have a price history.',
                 ]);
@@ -263,7 +247,7 @@ class ProjectEstimateController extends Controller
                 ...$row,
                 'designation' => $item->description,
                 'unit' => $item->unit,
-                'unit_cost' => $price->price,
+                'unit_cost' => $item->catalog_price,
                 'group' => filled($row['group'] ?? null) ? trim((string) $row['group']) : null,
             ];
         })->all());
@@ -271,6 +255,18 @@ class ProjectEstimateController extends Controller
 
     /** @return Collection<int, array{id: mixed, itemcode: mixed, description: mixed, unit: mixed, price: float}> */
     private function pricedItems(): Collection
+    {
+        return $this->pricedItemsQuery()->orderBy('items.description')->get()
+            ->map(fn (object $item): array => [
+                'id' => $item->id,
+                'itemcode' => $item->itemcode,
+                'description' => $item->description,
+                'unit' => $item->unit,
+                'price' => (float) ($item->catalog_price ?? 0),
+            ]);
+    }
+
+    private function pricedItemsQuery(): Builder
     {
         $today = now()->toDateString();
 
@@ -287,15 +283,6 @@ class ProjectEstimateController extends Controller
                     ->orderByDesc('effective_from')
                     ->orderByDesc('id')
                     ->limit(1);
-            }, 'catalog_price')
-            ->orderBy('items.description')
-            ->get()
-            ->map(fn (object $item): array => [
-                'id' => $item->id,
-                'itemcode' => $item->itemcode,
-                'description' => $item->description,
-                'unit' => $item->unit,
-                'price' => (float) ($item->catalog_price ?? 0),
-            ]);
+            }, 'catalog_price');
     }
 }

@@ -80,6 +80,12 @@ class ResourceCatalogController extends Controller
                 })->orderByDesc($this->key($catalog))->paginate(15)->withQueryString();
         }
 
+        $signatoryAssignments = $catalog === 'signatories'
+            ? DB::table('signatory_role_assignments')
+                ->join('signatories', 'signatories.cats_no', '=', 'signatory_role_assignments.cats_no')
+                ->get(['signatory_role_assignments.role', 'signatories.cats_no', 'signatories.name'])->keyBy('role')
+            : collect();
+
         return Inertia::render('admin/libraries/index', [
             'catalog' => $catalog,
             'title' => $definition['title'],
@@ -93,11 +99,8 @@ class ResourceCatalogController extends Controller
             'items' => $catalog === 'prices'
                 ? DB::table('items')->orderBy('itemcode')->get(['itemcode', 'description']) : [],
             'signatoryRoles' => $catalog === 'signatories'
-                ? collect(Signatory::ROLES)->map(function (string $label, string $key): array {
-                    $assignment = DB::table('signatory_role_assignments')
-                        ->join('signatories', 'signatories.cats_no', '=', 'signatory_role_assignments.cats_no')
-                        ->where('signatory_role_assignments.role', $key)
-                        ->first(['signatories.cats_no', 'signatories.name']);
+                ? collect(Signatory::ROLES)->map(function (string $label, string $key) use ($signatoryAssignments): array {
+                    $assignment = $signatoryAssignments->get($key);
 
                     return [
                         'key' => $key,
@@ -255,6 +258,7 @@ class ResourceCatalogController extends Controller
 
     public function itemPriceHistory(string $record): JsonResponse
     {
+        Gate::authorize('viewAny', Item::class);
         $item = Item::query()->findOrFail($record);
         Gate::authorize('view', $item);
 

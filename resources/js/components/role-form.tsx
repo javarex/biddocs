@@ -74,6 +74,7 @@ export default function RoleForm({
                     <Label htmlFor="slug">Slug</Label>
                     <Input
                         id="slug"
+                        readOnly={role?.slug === 'administrator'}
                         value={form.data.slug}
                         onChange={(event) =>
                             form.setData('slug', event.target.value)

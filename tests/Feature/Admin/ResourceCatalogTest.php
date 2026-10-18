@@ -50,7 +50,7 @@ it('shows the latest unit cost and effectivity on the items page', function () {
     $this->get('/admin/libraries/items')->assertOk()->assertInertia(fn (Assert $page) => $page
         ->where('displayFields', ['itemcode', 'category_id', 'description', 'unit', 'unit_cost', 'effective_from', 'effective_to'])
         ->where('records.data.0.itemcode', 'M-1')
-        ->where('records.data.0.unit_cost', '110.50')
+        ->where('records.data.0.unit_cost', fn ($price): bool => (float) $price === 110.50)
         ->where('records.data.0.effective_from', '2026-01-01')
         ->where('records.data.0.effective_to', null));
 });
@@ -72,7 +72,7 @@ it('saves item prices from the items library without duplicating unchanged price
     $this->put("{$url}/{$id}", [...$item, 'price' => '135.00'])->assertSessionHasNoErrors();
     $this->assertSame(2, DB::table('prices')->where('itemcode', 'P-1')->count());
     $this->get($url)->assertInertia(fn (Assert $page) => $page
-        ->where('records.data.0.unit_cost', '135.00'));
+        ->where('records.data.0.unit_cost', fn ($price): bool => (float) $price === 135.00));
 
     $this->put("{$url}/{$id}", [...$item, 'price' => '-1'])->assertSessionHasErrors('price');
 });
@@ -92,8 +92,8 @@ it('lists only the selected items price history in newest effective date order',
     $this->getJson("/admin/libraries/items/{$id}/price-history")
         ->assertOk()
         ->assertJsonPath('total', 2)
-        ->assertJsonPath('data.0.price', '120.00')
-        ->assertJsonPath('data.1.price', '100.00');
+        ->assertJsonPath('data.0.price', fn ($price): bool => (float) $price === 120.00)
+        ->assertJsonPath('data.1.price', fn ($price): bool => (float) $price === 100.00);
 });
 
 it('quick creates labor and equipment as json for the dupa editor', function () {
