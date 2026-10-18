@@ -17,17 +17,20 @@ use Illuminate\Validation\ValidationException;
 
 class DupaEstimateService
 {
+    public function __construct(private readonly ProjectMarkupRateService $markupRates) {}
+
     public function initialize(ProjectItem $dupa): void
     {
+        $rates = $this->markupRates->forProject($dupa->section->project);
         foreach (['ADD', 'NON_ADD'] as $type) {
             DupaEstimate::query()->firstOrCreate(
                 ['dupa_id' => $dupa->id, 'estimate_type' => $type],
                 [
                     'calculation_mode' => 'resources',
                     'quantity' => $type === 'ADD' ? $dupa->qty : 0,
-                    'ocm_percentage' => 12,
-                    'profit_percentage' => 8,
-                    'vat_percentage' => 5,
+                    'ocm_percentage' => $rates['ocm_percentage'] ?? 12,
+                    'profit_percentage' => $rates['profit_percentage'] ?? 8,
+                    'vat_percentage' => $rates['vat_percentage'] ?? 5,
                 ],
             );
         }
@@ -54,6 +57,10 @@ class DupaEstimateService
                 } catch (\InvalidArgumentException $exception) {
                     throw ValidationException::withMessages(['backup' => $exception->getMessage()]);
                 }
+            }
+            $rates = $this->markupRates->forProject($dupa->section->project);
+            if ($rates !== null) {
+                $data = array_merge($data, $rates);
             }
             $estimate->labors()->delete();
             $estimate->equipment()->delete();
@@ -160,6 +167,40 @@ class DupaEstimateService
 
             return $estimate->fresh(['labors', 'equipment', 'items']);
         });
+    }
+
+    public function refreshProjectMarkup(Project $project): void
+    {
+        $rates = $this->markupRates->forProject($project);
+        if ($rates === null) {
+            return;
+        }
+
+        $estimates = DupaEstimate::query()
+            ->whereHas('dupa.section', fn ($query) => $query->where('project_id', $project->id))
+            ->with('dupa')
+            ->get();
+
+        foreach ($estimates as $estimate) {
+            $direct = (float) $estimate->direct_cost;
+            $ocm = round($direct * $rates['ocm_percentage'] / 100, 2);
+            $profit = round($direct * $rates['profit_percentage'] / 100, 2);
+            $vat = round(($direct + $ocm + $profit) * $rates['vat_percentage'] / 100, 2);
+            $indirect = round($ocm + $profit + $vat, 2);
+            $total = round($direct + $indirect, 2);
+            $quantity = (float) $estimate->quantity;
+
+            $estimate->update($rates + [
+                'ocm_amount' => $ocm,
+                'profit_amount' => $profit,
+                'vat_amount' => $vat,
+                'indirect_cost' => $indirect,
+                'total_cost' => $total,
+                'unit_cost' => $quantity > 0 ? round($total / $quantity, 2) : 0,
+                'backup_revision' => $estimate->backup_revision + 1,
+            ]);
+            $this->syncLegacyTotals($estimate->dupa);
+        }
     }
 
     public function duplicate(ProjectItem $source): ProjectItem

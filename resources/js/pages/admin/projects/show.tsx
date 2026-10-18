@@ -2,6 +2,8 @@ import { Head, Link } from '@inertiajs/react';
 import EmptyState from '@/components/empty-state';
 import PageHeader from '@/components/page-header';
 import ProjectActions from '@/components/project-actions';
+import ProjectMarkupRates from '@/components/project-markup-rates';
+import type { MarkupRateBand } from '@/components/project-markup-rates';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -40,7 +42,9 @@ export type Props = {
     project: {
         id: number;
         project_code: string | null;
+        project_date: string | null;
         project_name: string;
+        allocated_amount: number | null;
         project_description: string | null;
         source_of_funds: string | null;
         location: string;
@@ -56,6 +60,7 @@ export type Props = {
         sections: Section[];
     };
     can_view_dupa: boolean;
+    markupRateBands: MarkupRateBand[];
     totals: Record<'ADD' | 'NON_ADD', Total>;
 };
 const amount = new Intl.NumberFormat('en-PH', {
@@ -71,6 +76,7 @@ export default function ProjectsShow({
     project,
     totals,
     can_view_dupa,
+    markupRateBands,
 }: Props) {
     const itemCount = project.sections.reduce(
         (count, section) =>
@@ -120,6 +126,28 @@ export default function ProjectsShow({
                         <CardTitle>Project details</CardTitle>
                     </CardHeader>
                     <CardContent className="grid gap-4 text-sm md:grid-cols-3">
+                        <Detail
+                            label="1. Project date"
+                            value={project.project_date}
+                        />
+                        <Detail
+                            label="2. Name of project"
+                            value={project.project_name}
+                        />
+                        <div>
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                                Allocated amount
+                                <ProjectMarkupRates
+                                    allocatedAmount={project.allocated_amount}
+                                    bands={markupRateBands}
+                                />
+                            </div>
+                            <div className="font-medium">
+                                {project.allocated_amount === null
+                                    ? '—'
+                                    : peso.format(project.allocated_amount)}
+                            </div>
+                        </div>
                         <Detail
                             label="Description"
                             value={project.project_description}

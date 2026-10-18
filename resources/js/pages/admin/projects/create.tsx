@@ -7,9 +7,11 @@ import type {
     SignatorySystemUser,
 } from '@/components/project-form';
 import type { ProjectFields } from '@/components/project-form';
+import type { MarkupRateBand } from '@/components/project-markup-rates';
 
 export default function ProjectCreate({
     signatories,
+    markupRateBands,
     signatoryDefaults,
     canCreateSignatories,
     canUpdateSignatories,
@@ -17,6 +19,7 @@ export default function ProjectCreate({
     signatorySystemUsers,
 }: {
     signatories: Signatory[];
+    markupRateBands: MarkupRateBand[];
     signatoryDefaults: Partial<ProjectFields>;
     canCreateSignatories: boolean;
     canUpdateSignatories: boolean;
@@ -35,6 +38,7 @@ export default function ProjectCreate({
                 />
                 <ProjectForm
                     worksheet
+                    markupRateBands={markupRateBands}
                     signatories={signatories}
                     signatoryDefaults={signatoryDefaults}
                     canCreateSignatories={canCreateSignatories}

@@ -2,6 +2,8 @@ import { useForm } from '@inertiajs/react';
 import type { FormEvent } from 'react';
 import AutoRowTextarea from '@/components/auto-row-textarea';
 import InputError from '@/components/input-error';
+import ProjectMarkupRates from '@/components/project-markup-rates';
+import type { MarkupRateBand } from '@/components/project-markup-rates';
 import { Button } from '@/components/ui/button';
 import type { Props } from '@/pages/admin/projects/show';
 
@@ -9,6 +11,8 @@ type Project = Props['project'];
 type Details = Pick<
     Project,
     | 'project_name'
+    | 'project_date'
+    | 'allocated_amount'
     | 'location'
     | 'type_of_projects'
     | 'project_description'
@@ -27,9 +31,17 @@ const categories: Record<string, string[]> = {
 const control =
     'w-full min-w-0 rounded-none border-0 bg-transparent px-0 py-1 text-sm font-semibold text-slate-950 shadow-none outline-none focus-visible:ring-1 focus-visible:ring-emerald-600 focus-visible:ring-inset';
 
-export default function ProjectDupaDetails({ project }: { project: Project }) {
+export default function ProjectDupaDetails({
+    project,
+    markupRateBands,
+}: {
+    project: Project;
+    markupRateBands: MarkupRateBand[];
+}) {
     const form = useForm<Details>({
         project_name: project.project_name,
+        project_date: project.project_date,
+        allocated_amount: project.allocated_amount,
         location: project.location,
         type_of_projects: project.type_of_projects,
         project_description: project.project_description,
@@ -56,12 +68,20 @@ export default function ProjectDupaDetails({ project }: { project: Project }) {
     };
     const field = (name: keyof Details, label: string, span = '', rows = 0) => (
         <div className={`border border-slate-400 px-2 py-1.5 ${span}`}>
-            <label
-                className="mb-0.5 block text-xs"
-                htmlFor={`dupa-project-${name}`}
-            >
-                {label}
-            </label>
+            <div className="mb-0.5 flex items-center gap-2">
+                <label
+                    className="block text-xs"
+                    htmlFor={`dupa-project-${name}`}
+                >
+                    {label}
+                </label>
+                {name === 'allocated_amount' && (
+                    <ProjectMarkupRates
+                        allocatedAmount={form.data.allocated_amount}
+                        bands={markupRateBands}
+                    />
+                )}
+            </div>
             {editable ? (
                 rows > 0 ? (
                     <AutoRowTextarea
@@ -74,8 +94,22 @@ export default function ProjectDupaDetails({ project }: { project: Project }) {
                     <input
                         id={`dupa-project-${name}`}
                         className={control}
-                        type={name === 'contract_duration' ? 'number' : 'text'}
-                        min={name === 'contract_duration' ? 1 : undefined}
+                        type={
+                            name === 'project_date'
+                                ? 'date'
+                                : name === 'contract_duration' ||
+                                    name === 'allocated_amount'
+                                  ? 'number'
+                                  : 'text'
+                        }
+                        min={
+                            name === 'contract_duration'
+                                ? 1
+                                : name === 'allocated_amount'
+                                  ? 0
+                                  : undefined
+                        }
+                        step={name === 'allocated_amount' ? '0.01' : undefined}
                         value={form.data[name] ?? ''}
                         onChange={(e) => form.setData(name, e.target.value)}
                     />
@@ -144,7 +178,9 @@ export default function ProjectDupaDetails({ project }: { project: Project }) {
     return (
         <form onSubmit={submit}>
             <div className="grid grid-cols-[2fr_1fr_1fr] text-sm">
+                {field('project_date', '1.) Project Date:')}
                 {field('project_name', '2.) Name of Project:', '', 2)}
+                {field('allocated_amount', 'Allocated Amount (₱):')}
                 {field('location', '3.) Location:', '', 2)}
                 {select('type_of_projects', '4.) Type of Projects:', [
                     'Buildings',

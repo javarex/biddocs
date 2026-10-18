@@ -5,6 +5,8 @@ import { useState } from 'react';
 import AutoRowTextarea from '@/components/auto-row-textarea';
 import InputError from '@/components/input-error';
 import type { MiscellaneousRow } from '@/components/miscellaneous-inputs';
+import ProjectMarkupRates from '@/components/project-markup-rates';
+import type { MarkupRateBand } from '@/components/project-markup-rates';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -42,7 +44,9 @@ export type ProjectFields = {
     miscellaneous?: MiscellaneousRow[];
     id?: number;
     project_code: string | null;
+    project_date: string | null;
     project_name: string;
+    allocated_amount: number | string | null;
     project_description: string | null;
     source_of_funds: string | null;
     location: string;
@@ -66,7 +70,9 @@ export type ProjectFields = {
 const emptyProject: ProjectFields = {
     miscellaneous: [],
     project_code: '',
+    project_date: '',
     project_name: '',
+    allocated_amount: '',
     project_description: '',
     source_of_funds: '',
     location: '',
@@ -106,6 +112,7 @@ const categoryOptions: Record<ProjectType, string[]> = {
 
 export default function ProjectForm({
     project,
+    markupRateBands,
     worksheet = false,
     activePanel,
     onPanelChange,
@@ -117,6 +124,7 @@ export default function ProjectForm({
     signatorySystemUsers,
 }: {
     project?: ProjectFields;
+    markupRateBands: MarkupRateBand[];
     worksheet?: boolean;
     activePanel?: 'details' | 'signatories';
     onPanelChange?: (panel: 'details' | 'signatories') => void;
@@ -227,10 +235,20 @@ export default function ProjectForm({
         className = '',
     ) => (
         <div className={`space-y-1 ${className}`}>
-            <Label htmlFor={String(name)}>{label}</Label>
+            <div className="flex items-center gap-2">
+                <Label htmlFor={String(name)}>{label}</Label>
+                {name === 'allocated_amount' && (
+                    <ProjectMarkupRates
+                        allocatedAmount={form.data.allocated_amount}
+                        bands={markupRateBands}
+                    />
+                )}
+            </div>
             <Input
                 id={String(name)}
                 type={type}
+                min={name === 'allocated_amount' ? 0 : undefined}
+                step={name === 'allocated_amount' ? '0.01' : undefined}
                 value={String(form.data[name] ?? '')}
                 onChange={(event) => form.setData(name, event.target.value)}
             />
@@ -409,12 +427,26 @@ export default function ProjectForm({
                                     <div className="grid grid-cols-[2fr_1fr_1fr] text-sm [&>div]:border [&>div]:border-slate-400 [&>div]:px-2 [&>div]:py-1.5">
                                         <div>
                                             {field(
+                                                'project_date',
+                                                '1.) Project Date:',
+                                                'date',
+                                            )}
+                                        </div>
+                                        <div>
+                                            {field(
                                                 'project_name',
                                                 '2.) Name of Project:',
                                             )}
                                         </div>
                                         <div>
                                             {field('location', '3.) Location:')}
+                                        </div>
+                                        <div>
+                                            {field(
+                                                'allocated_amount',
+                                                'Allocated amount (₱):',
+                                                'number',
+                                            )}
                                         </div>
                                         <div>{typeControl}</div>
                                         <div className="col-span-1 space-y-1">
@@ -509,8 +541,18 @@ export default function ProjectForm({
                                 <CardContent className="space-y-2">
                                     <div className="grid items-start gap-2 xl:grid-cols-[1.5fr_1fr_1fr]">
                                         {field(
+                                            'project_date',
+                                            '1. Project date',
+                                            'date',
+                                        )}
+                                        {field(
                                             'project_name',
                                             '2. Name of project',
+                                        )}
+                                        {field(
+                                            'allocated_amount',
+                                            'Allocated amount (₱)',
+                                            'number',
                                         )}
                                         {field('location', '3. Location')}
                                         <div className="space-y-2">

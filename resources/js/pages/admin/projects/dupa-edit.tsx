@@ -119,7 +119,13 @@ type Props = {
         id: number;
         project_code: string | null;
         project_name: string;
+        allocated_amount: number | null;
     };
+    markupRates: {
+        ocm_percentage: number;
+        profit_percentage: number;
+        vat_percentage: number;
+    } | null;
     dupa: {
         id: number;
         section_id: number;
@@ -165,6 +171,7 @@ export default function DupaEdit({
     canSyncItems,
     syncCategories,
     project,
+    markupRates,
     dupa,
     sections,
     catalogs,
@@ -1037,6 +1044,7 @@ export default function DupaEdit({
                             />
                             <NumberField
                                 label="OCM %"
+                                readOnly={markupRates !== null}
                                 value={estimate.ocm_percentage}
                                 onChange={(value) =>
                                     setEstimate({
@@ -1047,6 +1055,7 @@ export default function DupaEdit({
                             />
                             <NumberField
                                 label="Profit %"
+                                readOnly={markupRates !== null}
                                 value={estimate.profit_percentage}
                                 onChange={(value) =>
                                     setEstimate({
@@ -1057,6 +1066,7 @@ export default function DupaEdit({
                             />
                             <NumberField
                                 label="VAT %"
+                                readOnly={markupRates !== null}
                                 value={estimate.vat_percentage}
                                 onChange={(value) =>
                                     setEstimate({
@@ -1874,7 +1884,13 @@ export default function DupaEdit({
                             {Object.entries(computed).map(([key, value]) => (
                                 <div key={key}>
                                     <div className="text-xs text-muted-foreground capitalize">
-                                        {key}
+                                        {key === 'ocm'
+                                            ? `Contractor's OCM (${estimate.ocm_percentage}% of D)`
+                                            : key === 'profit'
+                                              ? `Contractor's Profit (${estimate.profit_percentage}% of D)`
+                                              : key === 'vat'
+                                                ? `Value Added Tax (${estimate.vat_percentage}% of D+E+F)`
+                                                : key}
                                     </div>
                                     <div className="font-semibold">
                                         {money.format(value)}
@@ -2043,7 +2059,9 @@ function NumberField({
                 readOnly={readOnly}
                 title={
                     readOnly
-                        ? 'Calculated from a backup. Change its formula binding to use a manual value.'
+                        ? ['OCM %', 'Profit %', 'VAT %'].includes(label)
+                            ? 'Determined by the project allocated amount.'
+                            : 'Calculated from a backup. Change its formula binding to use a manual value.'
                         : undefined
                 }
                 onChange={(e) => onChange(e.target.value)}
