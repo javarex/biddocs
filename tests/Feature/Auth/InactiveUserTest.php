@@ -21,4 +21,14 @@ class InactiveUserTest extends TestCase
 
         $this->assertGuest();
     }
+
+    public function test_deactivated_accounts_are_logged_out_and_show_a_login_error(): void
+    {
+        $user = User::factory()->create(['is_active' => false]);
+
+        $this->actingAs($user)->get(route('dashboard'))->assertRedirect(route('login'))
+            ->assertSessionHasErrors(['login' => 'Your account is inactive.']);
+
+        $this->assertGuest();
+    }
 }

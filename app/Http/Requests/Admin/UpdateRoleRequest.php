@@ -4,6 +4,7 @@ namespace App\Http\Requests\Admin;
 
 use App\Models\Role;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateRoleRequest extends FormRequest
 {
@@ -20,7 +21,8 @@ class UpdateRoleRequest extends FormRequest
 
         return [
             'name' => ['required', 'string', 'max:100'],
-            'slug' => ['required', 'string', 'max:100', 'alpha_dash', 'unique:roles,slug,'.$role->id],
+            'slug' => ['required', 'string', 'max:100', 'alpha_dash', 'unique:roles,slug,'.$role->id,
+                Rule::when($role->slug === 'administrator', [Rule::in(['administrator'])])],
             'description' => ['nullable', 'string', 'max:500'],
             'permissions' => ['array'],
             'permissions.*' => ['integer', 'exists:permissions,id'],

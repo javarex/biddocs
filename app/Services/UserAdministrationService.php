@@ -68,17 +68,20 @@ class UserAdministrationService
     /** @param array<string, mixed> $data */
     private function guardSuperAdminSafety(User $user, array $data): void
     {
-        $isRemovingAccess = ($data['is_super_admin'] ?? $user->is_super_admin) === false
-            || ($data['is_active'] ?? $user->is_active) === false;
+        $isRemovingAccess = ! (bool) ($data['is_super_admin'] ?? $user->is_super_admin)
+            || ! (bool) ($data['is_active'] ?? $user->is_active);
 
-        if ($user->is_super_admin && $user->is_active && $isRemovingAccess) {
+        if ($isRemovingAccess) {
             $this->guardFinalActiveSuperAdmin($user);
         }
     }
 
     private function guardFinalActiveSuperAdmin(User $user): void
     {
-        if ($user->is_super_admin && $user->is_active && User::query()->where('is_super_admin', true)->where('is_active', true)->count() <= 1) {
+        $activeAdmins = User::query()->where('is_super_admin', true)->where('is_active', true)
+            ->orderBy('id')->lockForUpdate()->pluck('id');
+
+        if ($activeAdmins->contains($user->id) && $activeAdmins->count() <= 1) {
             throw ValidationException::withMessages(['user' => 'The final active Super Admin cannot be removed.']);
         }
     }

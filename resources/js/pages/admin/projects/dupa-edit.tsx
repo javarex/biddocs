@@ -114,6 +114,7 @@ type Props = {
     csrf_token: string;
     canCreateResources: boolean;
     canSyncItems: boolean;
+    canSyncPrices: boolean;
     syncCategories: SyncCategory[];
     project: {
         id: number;
@@ -169,6 +170,7 @@ export default function DupaEdit({
     csrf_token,
     canCreateResources,
     canSyncItems,
+    canSyncPrices,
     syncCategories,
     project,
     markupRates,
@@ -1640,6 +1642,7 @@ export default function DupaEdit({
                                         {canSyncItems && (
                                             <ItemSyncDialog
                                                 categories={syncCategories}
+                                                canSyncPrices={canSyncPrices}
                                                 compact
                                                 onSynced={(message) =>
                                                     toast.success(message)

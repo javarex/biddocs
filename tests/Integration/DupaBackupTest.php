@@ -34,13 +34,6 @@ class DupaBackupTest extends TestCase
 
     private DupaEstimateService $service;
 
-    protected function beforeRefreshingDatabase(): void
-    {
-        if (config('database.default') !== 'mysql' || ! str_ends_with((string) config('database.connections.mysql.database'), '_tests') || ! str_starts_with((string) config('database.connections.mysql.unix_socket'), '/tmp/bds-backup-tests.')) {
-            throw new \LogicException('Backup integration tests require a disposable MySQL instance in /tmp/bds-backup-tests.* and a database ending in _tests.');
-        }
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -159,7 +152,8 @@ class DupaBackupTest extends TestCase
         $this->assertSame(432.36, $this->estimate->fresh()->quantity);
         $data = $this->estimate->fresh(['labors', 'equipment', 'items'])->toArray();
         $data['labors'][0]['no_of_days'] = 99;
-        $this->putJson("/admin/dupas/{$this->dupa->id}/estimates/ADD", $data)->assertRedirect()->assertSessionHasNoErrors();
+        $this->putJson("/admin/dupas/{$this->dupa->id}/estimates/ADD", $data)->assertOk()
+            ->assertJsonPath('estimate.quantity', 432.36);
         $this->assertSame(11.0, $this->estimate->labors()->sole()->no_of_days);
         $this->assertSame(432.36, $this->estimate->fresh()->quantity);
         $this->assertSame(8, $this->estimate->backups()->sole()->definition['inputs'][0]['value']);
@@ -190,7 +184,8 @@ class DupaBackupTest extends TestCase
         $this->apply();
         $uuid = $this->estimate->labors()->sole()->row_uuid;
         $data = $this->estimate->fresh(['labors', 'equipment', 'items'])->toArray();
-        $this->putJson("/admin/dupas/{$this->dupa->id}/estimates/ADD", $data)->assertRedirect()->assertSessionHasNoErrors();
+        $this->putJson("/admin/dupas/{$this->dupa->id}/estimates/ADD", $data)->assertOk()
+            ->assertJsonPath('estimate.labors.0.row_uuid', $uuid);
         $this->assertSame($uuid, $this->estimate->labors()->sole()->row_uuid);
         $data = $this->estimate->fresh(['labors', 'equipment', 'items'])->toArray();
         $data['labors'] = [];
@@ -365,13 +360,13 @@ class DupaBackupTest extends TestCase
         $this->actingAs($editor)->get('/admin/backup-templates')->assertOk()->assertInertia(fn (Assert $page) => $page->has('templates.data', 2));
         $this->get('/admin/backup-templates?search=Other')->assertOk()->assertInertia(fn (Assert $page) => $page->has('templates.data', 1)->where('templates.data.0.id', $foreign->id));
         $this->get("/admin/dupas/{$this->dupa->id}/edit")->assertOk()->assertInertia(fn (Assert $page) => $page->has('backupTemplates', 3));
-        $original = $foreign->getAttributes();
+        $original = $foreign->fresh()->toArray();
         $this->postJson("/admin/dupas/{$this->dupa->id}/backup-templates/{$foreign->id}/exclusion", ['excluded' => true])->assertOk();
         $this->assertDatabaseHas('excluded_templates', ['template_id' => $foreign->id, 'user_id' => $editor->id]);
         $this->get("/admin/dupas/{$this->dupa->id}/edit")->assertOk()->assertInertia(fn (Assert $page) => $page->has('backupTemplates', 2));
         $this->post("/admin/backup-templates/{$foreign->id}/visibility", ['excluded' => false])->assertRedirect();
         $this->get("/admin/dupas/{$this->dupa->id}/edit")->assertOk()->assertInertia(fn (Assert $page) => $page->has('backupTemplates', 3));
-        $this->assertSame($original, $foreign->fresh()->getAttributes());
+        $this->assertSame($original, $foreign->fresh()->toArray());
         $this->post("/admin/backup-templates/{$template->id}/visibility", ['excluded' => true])->assertRedirect();
         $this->assertDatabaseHas('excluded_templates', ['template_id' => $template->id, 'user_id' => $editor->id]);
     }

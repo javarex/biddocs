@@ -4,13 +4,18 @@ namespace App\Services\Backup;
 
 class Usage
 {
-    /** Backups used by linked fields, including their transitive dependencies. */
+    /**
+     * Backups used by linked fields, including their transitive dependencies.
+     *
+     * @param  array<string, mixed>  $document
+     * @return list<string>
+     */
     public static function referencedKeys(array $document): array
     {
         $references = static function (mixed $value): array {
             preg_match_all('/\b([A-Za-z_][A-Za-z_0-9]*)\.outputs\./', json_encode($value, JSON_THROW_ON_ERROR), $matches);
 
-            return array_unique($matches[1]);
+            return array_values(array_unique($matches[1]));
         };
         $used = $references($document['bindings'] ?? []);
         do {

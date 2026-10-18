@@ -16,7 +16,7 @@ class EnsureActiveUser
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
-            return to_route('login')->withErrors(['email' => 'Your account is inactive.']);
+            return to_route('login')->withErrors(['login' => 'Your account is inactive.']);
         }
 
         return $next($request);

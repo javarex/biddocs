@@ -62,10 +62,11 @@ class UserController extends Controller
     public function edit(User $user): Response
     {
         Gate::authorize('update', $user);
+        $user->load('roles');
 
         return Inertia::render('admin/users/edit', [
             'user' => $this->present($user),
-            'roles' => Role::query()->with('permissions')->orderBy('name')->get(['id', 'name', 'slug']),
+            'roles' => Role::query()->orderBy('name')->get(['id', 'name', 'slug']),
         ]);
     }
 

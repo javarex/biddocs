@@ -95,6 +95,7 @@ foreach ($sections as $number => $section) {
 
     if ($requirements !== []) {
         $body .= table($requirements);
+
         continue;
     }
 
@@ -110,6 +111,7 @@ foreach ($sections as $number => $section) {
             $actors[] = [plain($matches[1]), plain($matches[2])];
         }
         $body .= table($actors, 'Actor', 'Description', 1800);
+
         continue;
     }
 

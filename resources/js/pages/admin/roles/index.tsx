@@ -12,7 +12,7 @@ type Role = {
     slug: string;
     description: string | null;
     users_count: number;
-    permissions: Array<{ id: number; name: string; slug: string }>;
+    permissions_count: number;
 };
 export default function RolesIndex({ roles }: { roles: Role[] }) {
     return (
@@ -65,7 +65,7 @@ export default function RolesIndex({ roles }: { roles: Role[] }) {
                                         {role.description || '—'}
                                     </td>
                                     <td className="px-4 py-3">
-                                        {role.permissions.length}
+                                        {role.permissions_count}
                                     </td>
                                     <td className="px-4 py-3">
                                         {role.users_count}

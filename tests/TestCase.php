@@ -9,10 +9,14 @@ abstract class TestCase extends BaseTestCase
 {
     protected function beforeRefreshingDatabase()
     {
-        if (app()->environment('testing')
-            && config('database.default') === 'mysql'
-            && config('database.connections.mysql.database') === 'bds') {
-            throw new \LogicException('Refusing to refresh the live bds database during tests.');
+        $connection = app('db')->connection();
+        $database = $connection->getDatabaseName();
+        $usesMemorySqlite = $connection->getDriverName() === 'sqlite' && $database === ':memory:';
+        $usesTestDatabase = in_array($connection->getDriverName(), ['mysql', 'mariadb'], true)
+            && str_ends_with($database, '_tests');
+
+        if (! app()->environment('testing') || (! $usesMemorySqlite && ! $usesTestDatabase)) {
+            throw new \LogicException('Tests require in-memory SQLite or a dedicated MySQL database ending in _tests.');
         }
     }
 
