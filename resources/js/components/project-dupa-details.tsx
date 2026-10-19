@@ -12,7 +12,6 @@ type Details = Pick<
     Project,
     | 'project_name'
     | 'project_date'
-    | 'allocated_amount'
     | 'location'
     | 'type_of_projects'
     | 'project_description'
@@ -22,7 +21,10 @@ type Details = Pick<
     | 'source_of_funds'
     | 'allotment_class'
     | 'implementation_scheme'
-> & { contract_duration: number | string };
+> & {
+    contract_duration: number | string;
+    allocated_amount: number | string | null;
+};
 const categories: Record<string, string[]> = {
     Buildings: ['1 Room', '2 Rooms', '3 Rooms', '4 Rooms'],
     Waterworks: ['Level 1', 'Level 2', 'Level 3'],
@@ -75,12 +77,6 @@ export default function ProjectDupaDetails({
                 >
                     {label}
                 </label>
-                {name === 'allocated_amount' && (
-                    <ProjectMarkupRates
-                        allocatedAmount={form.data.allocated_amount}
-                        bands={markupRateBands}
-                    />
-                )}
             </div>
             {editable ? (
                 rows > 0 ? (
@@ -177,11 +173,10 @@ export default function ProjectDupaDetails({
 
     return (
         <form onSubmit={submit}>
-            <div className="grid grid-cols-[2fr_1fr_1fr] text-sm">
+            <div className="grid grid-cols-[minmax(10rem,0.75fr)_minmax(0,2fr)_minmax(0,1fr)] text-sm">
                 {field('project_date', '1.) Project Date:')}
-                {field('project_name', '2.) Name of Project:', '', 2)}
-                {field('allocated_amount', 'Allocated Amount (₱):')}
-                {field('location', '3.) Location:', '', 2)}
+                {field('project_name', '2.) Name of Project:', 'col-span-2', 2)}
+                {field('location', '3.) Location:', 'col-span-3', 2)}
                 {select('type_of_projects', '4.) Type of Projects:', [
                     'Buildings',
                     'Waterworks',
@@ -193,7 +188,8 @@ export default function ProjectDupaDetails({
                     '',
                     3,
                 )}
-                <div className="col-span-2 border border-slate-400 px-2 py-1.5">
+                {field('dimension', '5.1) Dimension:', '', 4)}
+                <div className="border border-slate-400 px-2 py-1.5">
                     <label
                         className="mb-0.5 block text-xs"
                         htmlFor="dupa-project-category"
@@ -253,7 +249,6 @@ export default function ProjectDupaDetails({
                     )}
                     <InputError message={form.errors.category} />
                 </div>
-                {field('dimension', '5.1) Dimension:', '', 4)}
                 {field('source_of_funds', '8.) Source of Funds:', 'col-span-2')}
                 {field('floor_area', '5.2) Floor Area:')}
                 {select(
@@ -269,6 +264,39 @@ export default function ProjectDupaDetails({
                     ['Administration', 'contract'],
                     'col-span-2',
                 )}
+            </div>
+            <div className="flex flex-wrap items-center gap-3 border-x border-b border-slate-400 px-3 py-2 text-sm">
+                <div className="mr-auto font-semibold">
+                    10.) Summary of Estimated Cost
+                </div>
+                <label
+                    htmlFor="dupa-project-allocated-amount"
+                    className="font-medium"
+                >
+                    Allocated Amount (₱):
+                </label>
+                {editable ? (
+                    <input
+                        id="dupa-project-allocated-amount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="h-8 w-44 min-w-0 bg-transparent px-2 font-semibold text-slate-950 outline-none focus-visible:ring-1 focus-visible:ring-emerald-600"
+                        value={form.data.allocated_amount ?? ''}
+                        onChange={(event) =>
+                            form.setData('allocated_amount', event.target.value)
+                        }
+                    />
+                ) : (
+                    <span className="font-semibold">
+                        {project.allocated_amount ?? '—'}
+                    </span>
+                )}
+                <ProjectMarkupRates
+                    allocatedAmount={form.data.allocated_amount}
+                    bands={markupRateBands}
+                />
+                <InputError message={form.errors.allocated_amount} />
             </div>
             {editable && (
                 <div className="flex justify-end gap-2 border-x border-b border-slate-400 p-2 print:hidden">

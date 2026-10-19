@@ -37,7 +37,7 @@ class ProjectMarkupRatesTest extends TestCase
         }
     }
 
-    public function test_estimates_use_project_rates_and_recalculate_when_amount_changes(): void
+    public function test_estimates_default_to_project_rates_allow_edits_and_recalculate_when_amount_changes(): void
     {
         $project = Project::query()->create([
             'project_name' => 'Rate test', 'location' => 'Test', 'contract_duration' => 1,
@@ -58,16 +58,34 @@ class ProjectMarkupRatesTest extends TestCase
 
         $estimate = $service->save($dupa, 'ADD', [
             'quantity' => 1,
-            'ocm_percentage' => 0, 'profit_percentage' => 0, 'vat_percentage' => 0,
+            'ocm_percentage' => 9, 'profit_percentage' => 6, 'vat_percentage' => 4,
             'labors' => [[
                 'labor_id' => $labor->id, 'designation' => 'Worker',
                 'no_of_person' => 1, 'no_of_days' => 1, 'rate' => 1000, 'is_included' => true,
             ]],
             'equipment' => [], 'items' => [],
         ]);
-        $this->assertSame(150.0, $estimate->ocm_amount);
-        $this->assertSame(100.0, $estimate->profit_amount);
-        $this->assertSame(62.5, $estimate->vat_amount);
+        $this->assertSame(9.0, $estimate->ocm_percentage);
+        $this->assertSame(90.0, $estimate->ocm_amount);
+        $this->assertSame(60.0, $estimate->profit_amount);
+        $this->assertSame(46.0, $estimate->vat_amount);
+
+        $totals = $service->projectTotals($project);
+        $this->assertSame(1000.0, $totals['ADD']['labor_cost']);
+        $this->assertSame(0.0, $totals['ADD']['material_cost']);
+        $this->assertSame(0.0, $totals['ADD']['equipment_cost']);
+        $this->assertSame(90.0, $totals['ADD']['ocm_amount']);
+        $this->assertSame(60.0, $totals['ADD']['profit_amount']);
+        $this->assertSame(46.0, $totals['ADD']['vat_amount']);
+        $this->assertSame(196.0, $totals['ADD']['indirect_cost']);
+        foreach ($totals as $side) {
+            $this->assertEqualsWithDelta(
+                $side['grand_total'],
+                $side['direct_cost'] + $side['pol_amount'] + $side['indirect_cost'],
+                0.001,
+            );
+        }
+
 
         $admin = User::factory()->create(['is_super_admin' => true]);
         $this->actingAs($admin)->put(route('admin.projects.update', $project), [

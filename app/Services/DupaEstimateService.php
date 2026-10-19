@@ -58,10 +58,6 @@ class DupaEstimateService
                     throw ValidationException::withMessages(['backup' => $exception->getMessage()]);
                 }
             }
-            $rates = $this->markupRates->forProject($dupa->section->project);
-            if ($rates !== null) {
-                $data = array_merge($data, $rates);
-            }
             $estimate->labors()->delete();
             $estimate->equipment()->delete();
             $estimate->items()->delete();
@@ -357,6 +353,9 @@ class DupaEstimateService
             $settings = $project->estimateSettings()->where('estimate_type', $type)->firstOrFail();
             $query = DupaEstimate::query()->where('estimate_type', $type)
                 ->whereHas('dupa.section', fn ($query) => $query->where('project_id', $project->id));
+            $components = (clone $query)->selectRaw('COALESCE(SUM(labor_cost), 0) as labor_cost, COALESCE(SUM(material_cost), 0) as material_cost, COALESCE(SUM(equipment_cost), 0) as equipment_cost, COALESCE(SUM(ocm_amount), 0) as ocm_amount, COALESCE(SUM(profit_amount), 0) as profit_amount, COALESCE(SUM(vat_amount), 0) as vat_amount')->first()->only([
+                'labor_cost', 'material_cost', 'equipment_cost', 'ocm_amount', 'profit_amount', 'vat_amount',
+            ]);
             $direct = round((float) (clone $query)->sum('direct_cost'), 2);
             $dupaTotal = round((float) (clone $query)->sum('total_cost'), 2);
             $miscellaneous = round((float) $project->miscellaneous()->where('estimate_type', $type)
@@ -366,6 +365,8 @@ class DupaEstimateService
             $pol = $type === 'ADD' ? $projectPol : 0.0;
             $charges = round($pol + $settings->contingencies_amount + $preEngineering + $supervision + $miscellaneous, 2);
             $result[$type] = [
+                ...array_map(fn ($amount): float => round((float) $amount, 2), $components),
+                'indirect_cost' => round($dupaTotal - $direct + $charges - $pol, 2),
                 'direct_cost' => $direct,
                 'dupa_total' => $dupaTotal,
                 'pol_amount' => $pol,

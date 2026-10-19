@@ -424,7 +424,7 @@ export default function ProjectForm({
                                     <div className="border border-slate-400 py-3 text-center text-base font-bold">
                                         SUMMARY OF ESTIMATED COST
                                     </div>
-                                    <div className="grid grid-cols-[2fr_1fr_1fr] text-sm [&>div]:border [&>div]:border-slate-400 [&>div]:px-2 [&>div]:py-1.5">
+                                    <div className="grid grid-cols-[minmax(10rem,0.75fr)_minmax(0,2fr)_minmax(0,1fr)] text-sm [&>div]:border [&>div]:border-slate-400 [&>div]:px-2 [&>div]:py-1.5">
                                         <div>
                                             {field(
                                                 'project_date',
@@ -432,21 +432,14 @@ export default function ProjectForm({
                                                 'date',
                                             )}
                                         </div>
-                                        <div>
+                                        <div className="col-span-2">
                                             {field(
                                                 'project_name',
                                                 '2.) Name of Project:',
                                             )}
                                         </div>
-                                        <div>
+                                        <div className="col-span-3">
                                             {field('location', '3.) Location:')}
-                                        </div>
-                                        <div>
-                                            {field(
-                                                'allocated_amount',
-                                                'Allocated amount (₱):',
-                                                'number',
-                                            )}
                                         </div>
                                         <div>{typeControl}</div>
                                         <div className="col-span-1 space-y-1">
@@ -475,9 +468,6 @@ export default function ProjectForm({
                                                 }
                                             />
                                         </div>
-                                        <div className="col-span-2">
-                                            {categoryControl}
-                                        </div>
                                         <div className="space-y-1">
                                             <Label htmlFor="dimension">
                                                 5.1) Dimension:
@@ -498,6 +488,9 @@ export default function ProjectForm({
                                             <InputError
                                                 message={form.errors.dimension}
                                             />
+                                        </div>
+                                        <div className="col-span-1">
+                                            {categoryControl}
                                         </div>
                                         <div className="col-span-2">
                                             {field(
@@ -524,6 +517,17 @@ export default function ProjectForm({
                                         <div className="col-span-2">
                                             {schemeControl}
                                         </div>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-4 border-x border-b border-slate-400 px-3 py-2">
+                                        <div className="mr-auto text-sm font-semibold">
+                                            10.) Summary of Estimated Cost
+                                        </div>
+                                        {field(
+                                            'allocated_amount',
+                                            'Allocated amount (₱):',
+                                            'number',
+                                            'w-64',
+                                        )}
                                     </div>
                                 </div>
                             </div>
