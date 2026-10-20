@@ -1,10 +1,12 @@
-import { useForm } from '@inertiajs/react';
+import { router, useForm } from '@inertiajs/react';
 import { ClipboardList, Plus, Users } from 'lucide-react';
 import type { FormEvent } from 'react';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import AutoRowTextarea from '@/components/auto-row-textarea';
 import InputError from '@/components/input-error';
 import type { MiscellaneousRow } from '@/components/miscellaneous-inputs';
+import ProjectCharges from '@/components/project-charges';
+import type { ProjectChargeFields, Total } from '@/components/project-charges';
 import ProjectMarkupRates from '@/components/project-markup-rates';
 import type { MarkupRateBand } from '@/components/project-markup-rates';
 import { Button } from '@/components/ui/button';
@@ -112,6 +114,7 @@ const categoryOptions: Record<ProjectType, string[]> = {
 
 export default function ProjectForm({
     project,
+    chargeData,
     markupRateBands,
     worksheet = false,
     activePanel,
@@ -124,6 +127,9 @@ export default function ProjectForm({
     signatorySystemUsers,
 }: {
     project?: ProjectFields;
+    chargeData?: ProjectChargeFields & {
+        totals: Record<'ADD' | 'NON_ADD', Total>;
+    };
     markupRateBands: MarkupRateBand[];
     worksheet?: boolean;
     activePanel?: 'details' | 'signatories';
@@ -151,6 +157,43 @@ export default function ProjectForm({
         project
             ? { ...emptyProject, ...project }
             : { ...emptyProject, ...signatoryDefaults },
+    );
+    const [chargeDraft, setChargeDraft] = useState<
+        ProjectChargeFields | undefined
+    >(chargeData);
+    const [chargesDirty, setChargesDirty] = useState(false);
+    const updateCharges = useCallback(
+        (data: ProjectChargeFields, dirty: boolean) => {
+            setChargeDraft(data);
+            setChargesDirty(dirty);
+        },
+        [],
+    );
+    useEffect(() => {
+        const warn = (event: BeforeUnloadEvent) => {
+            if (form.isDirty || chargesDirty) {
+                event.preventDefault();
+                event.returnValue = true;
+            }
+        };
+        window.addEventListener('beforeunload', warn);
+
+        return () => window.removeEventListener('beforeunload', warn);
+    }, [form.isDirty, chargesDirty]);
+    useEffect(
+        () =>
+            router.on('before', (event) => {
+                if (
+                    event.detail.visit.method === 'get' &&
+                    (form.isDirty || chargesDirty) &&
+                    !window.confirm(
+                        'Leave this project and discard unsaved changes?',
+                    )
+                ) {
+                    event.preventDefault();
+                }
+            }),
+        [form.isDirty, chargesDirty],
     );
     const signatoryForm = useForm({
         cats_no: '',
@@ -205,8 +248,8 @@ export default function ProjectForm({
     const submit = (event: FormEvent) => {
         event.preventDefault();
 
-        form.transform((data) =>
-            Object.fromEntries(
+        form.transform((data) => ({
+            ...Object.fromEntries(
                 Object.entries(data).filter(
                     ([key]) =>
                         ![
@@ -217,7 +260,8 @@ export default function ProjectForm({
                         ].includes(key),
                 ),
             ),
-        );
+            ...(chargeDraft ? { charges: chargeDraft } : {}),
+        }));
 
         if (project?.id) {
             form.put(`/admin/projects/${project.id}`, {
@@ -395,6 +439,7 @@ export default function ProjectForm({
         <>
             <form
                 className="space-y-3 [&_[data-slot=card-content]]:px-3 [&_[data-slot=card-header]]:px-3 [&_[data-slot=card-title]]:text-sm [&_[data-slot=card]]:gap-2 [&_[data-slot=card]]:rounded-lg [&_[data-slot=card]]:py-3 [&_[data-slot=card]]:shadow-none [&_[data-slot=input]]:h-8 [&_[data-slot=label]]:text-xs [&_[data-slot=label]]:text-muted-foreground [&_button]:h-8 [&_select]:h-8"
+                inert={form.processing}
                 onSubmit={submit}
             >
                 {activePanel === undefined && (
@@ -976,7 +1021,50 @@ export default function ProjectForm({
                     </CardContent>
                 </Card>
 
-                <div className="flex flex-wrap items-center justify-end gap-3 border-t pt-3">
+                {project?.id && chargeData && (
+                    <div
+                        id="project-charges"
+                        className={
+                            panel === 'details' ? 'scroll-mt-4' : 'hidden'
+                        }
+                    >
+                        <h2 className="mb-2 text-sm font-semibold">
+                            Project charges
+                        </h2>
+                        <ProjectCharges
+                            projectId={project.id}
+                            pol={chargeData.pol}
+                            initialSettings={chargeData.settings}
+                            initialMisc={chargeData.miscellaneous}
+                            totals={chargeData.totals}
+                            onChange={updateCharges}
+                        />
+                    </div>
+                )}
+                {Object.entries(form.errors)
+                    .filter(([key]) => key.startsWith('charges.'))
+                    .map(([key, message]) => (
+                        <p
+                            key={key}
+                            role="alert"
+                            className="text-sm text-destructive"
+                        >
+                            {message}
+                        </p>
+                    ))}
+                <div className="sticky bottom-0 z-30 flex flex-wrap items-center justify-end gap-3 rounded-lg border bg-card p-3 shadow-lg">
+                    {project && (
+                        <span
+                            role="status"
+                            className="mr-auto text-xs text-muted-foreground"
+                        >
+                            {form.processing
+                                ? 'Saving…'
+                                : form.isDirty || chargesDirty
+                                  ? 'Unsaved changes'
+                                  : 'Saved ✓'}
+                        </span>
+                    )}
                     {!project && !currentUserPreparer && (
                         <p className="text-sm text-destructive">
                             Project creation is unavailable until your user
@@ -992,7 +1080,7 @@ export default function ProjectForm({
                         {form.processing
                             ? 'Saving…'
                             : project?.id
-                              ? 'Save project details'
+                              ? 'Save All Changes'
                               : 'Create project'}
                     </Button>
                 </div>

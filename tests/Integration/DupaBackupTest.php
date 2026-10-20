@@ -62,6 +62,49 @@ class DupaBackupTest extends TestCase
             ]];
     }
 
+    public function test_save_all_updates_details_and_both_sides_atomically(): void
+    {
+        $details = $this->dupa->only(['section_id', 'sub_section_id', 'pay_item_no', 'description', 'unit']);
+        $details['sort_order'] = 0;
+        $details['description'] = 'Updated together';
+        $estimates = $this->dupa->estimates()->with(['labors', 'equipment', 'items'])->get()->keyBy('estimate_type')->toArray();
+        $estimates['ADD']['quantity'] = 2;
+        $estimates['NON_ADD']['quantity'] = -1;
+
+        $this->putJson("/admin/dupas/{$this->dupa->id}/save-all", compact('details', 'estimates'))
+            ->assertUnprocessable()->assertJsonValidationErrors('NON_ADD.quantity');
+        $this->assertSame('Structure Excavation', $this->dupa->fresh()->description);
+        $this->assertSame(1.0, $this->estimate->fresh()->quantity);
+
+        $estimates['NON_ADD']['quantity'] = 3;
+        $this->putJson("/admin/dupas/{$this->dupa->id}/save-all", compact('details', 'estimates'))
+            ->assertOk()->assertJsonPath('estimates.ADD.quantity', 2)
+            ->assertJsonPath('estimates.NON_ADD.quantity', 3);
+        $this->assertSame('Updated together', $this->dupa->fresh()->description);
+    }
+
+    public function test_save_all_rolls_back_details_when_estimate_revision_is_stale(): void
+    {
+        $details = $this->dupa->only(['section_id', 'sub_section_id', 'pay_item_no', 'description', 'unit']);
+        $details['sort_order'] = 0;
+        $details['description'] = 'Must not be saved';
+        $estimate = $this->estimate->fresh(['labors', 'equipment', 'items'])->toArray();
+        $estimate['backup_revision'] += 1;
+        $this->putJson("/admin/dupas/{$this->dupa->id}/save-all", [
+            'details' => $details, 'estimates' => ['ADD' => $estimate],
+        ])->assertUnprocessable()->assertJsonValidationErrors('ADD.backup');
+        $this->assertSame('Structure Excavation', $this->dupa->fresh()->description);
+    }
+
+    public function test_save_all_can_save_details_without_estimate_changes(): void
+    {
+        $details = $this->dupa->only(['section_id', 'sub_section_id', 'pay_item_no', 'description', 'unit']);
+        $details['sort_order'] = 0;
+        $details['description'] = 'Details only';
+        $this->putJson("/admin/dupas/{$this->dupa->id}/save-all", ['details' => $details, 'estimates' => []])->assertOk();
+        $this->assertSame('Details only', $this->dupa->fresh()->description);
+    }
+
     private function url(string $action, string $side = 'ADD'): string
     {
         return "/admin/dupas/{$this->dupa->id}/estimates/{$side}/backups/{$action}";

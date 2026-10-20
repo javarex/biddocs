@@ -1,13 +1,6 @@
 import './dupa-worksheet.css';
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import {
-    ArrowLeft,
-    ArrowRight,
-    ChevronDown,
-    Copy,
-    Plus,
-    Trash2,
-} from 'lucide-react';
+import { ArrowLeft, ChevronDown, Copy, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import BackupDaysCell from '@/components/backup-days-cell';
@@ -588,7 +581,12 @@ export default function DupaEdit({
 
     useEffect(() => {
         const warn = (event: BeforeUnloadEvent) => {
-            if (!dirty.ADD && !dirty.NON_ADD && !backupDirty) {
+            if (
+                !dirty.ADD &&
+                !dirty.NON_ADD &&
+                !backupDirty &&
+                !details.isDirty
+            ) {
                 return;
             }
 
@@ -599,12 +597,34 @@ export default function DupaEdit({
         window.addEventListener('beforeunload', warn);
 
         return () => window.removeEventListener('beforeunload', warn);
-    }, [dirty, backupDirty]);
+    }, [dirty, backupDirty, details.isDirty]);
 
-    const saveEstimate = (nextId?: number | null) => {
+    useEffect(() => {
+        if (embedded && window.parent !== window) {
+            window.parent.postMessage(
+                {
+                    type: 'biddocs:dupa-dirty',
+                    dupaId: dupa.id,
+                    dirty:
+                        details.isDirty ||
+                        dirty.ADD ||
+                        dirty.NON_ADD ||
+                        backupDirty,
+                    saving,
+                },
+                window.location.origin,
+            );
+        }
+    }, [embedded, dupa.id, details.isDirty, dirty, backupDirty, saving]);
+
+    const saveEstimate = async () => {
+        if (saving) {
+            return;
+        }
+
         if (backupDirty) {
             toast.error(
-                'Save or apply the backup draft before saving the estimate.',
+                'Apply or discard the open backup draft before saving all changes.',
             );
 
             return;
@@ -612,31 +632,65 @@ export default function DupaEdit({
 
         setSaving(true);
         setEstimateErrors({});
-        router.put(`/admin/dupas/${dupa.id}/estimates/${side}`, estimate, {
-            preserveScroll: true,
-            onError: (errors) => {
-                setEstimateErrors(errors as Record<string, string>);
-                setSaving(false);
-            },
-            onSuccess: (page) => {
-                const updated = (page.props as unknown as Props).dupa.estimates;
-                setEstimates((current) => ({
-                    ...current,
-                    [side]: updated[side],
-                }));
-                notifyParentOfSave();
-                setSavedEstimateKeys((current) => ({
-                    ...current,
-                    [side]: estimateDraftKey(updated[side]),
-                }));
-                setSaving(false);
+        details.clearErrors();
+        const snapshot = structuredClone(details.data);
+        const changed = (['ADD', 'NON_ADD'] as Side[]).filter(
+            (type) => dirty[type],
+        );
 
-                if (nextId) {
-                    router.visit(`/admin/dupas/${nextId}/edit`);
-                }
-            },
-            onFinish: () => setSaving(false),
-        });
+        try {
+            const response = await fetch(`/admin/dupas/${dupa.id}/save-all`, {
+                method: 'PUT',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf_token,
+                },
+                body: JSON.stringify({
+                    details: snapshot,
+                    estimates: Object.fromEntries(
+                        changed.map((type) => [type, estimates[type]]),
+                    ),
+                }),
+            });
+            const payload = await response.json();
+
+            if (!response.ok) {
+                setEstimateErrors(
+                    Object.fromEntries(
+                        Object.entries(payload.errors ?? {}).map(
+                            ([key, messages]) => [
+                                key,
+                                Array.isArray(messages)
+                                    ? messages.join(' ')
+                                    : String(messages),
+                            ],
+                        ),
+                    ),
+                );
+
+                throw new Error(payload.message || 'Unable to save changes.');
+            }
+
+            const updated = payload.estimates as Record<Side, Estimate>;
+            setEstimates(updated);
+            setSavedEstimateKeys({
+                ADD: estimateDraftKey(updated.ADD),
+                NON_ADD: estimateDraftKey(updated.NON_ADD),
+            });
+            details.setDefaults(snapshot);
+            notifyParentOfSave();
+            toast.success('All DUPA changes saved.');
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : 'Unable to save changes.',
+            );
+        } finally {
+            setSaving(false);
+        }
     };
 
     const changeSide = (next: Side) => {
@@ -732,7 +786,7 @@ export default function DupaEdit({
             <Head title={`${dupa.pay_item_no} estimate`} />
             <div
                 onKeyDown={moveBetweenCells}
-                className={`dupa-worksheet ${embedded ? 'p-2' : 'p-3 md:p-4'}`}
+                className={`dupa-worksheet ${embedded ? 'dupa-worksheet-embedded p-1.5' : 'p-2 md:p-3'}`}
             >
                 {!embedded && (
                     <PageHeader
@@ -746,149 +800,155 @@ export default function DupaEdit({
                             .join(' · ')}
                     />
                 )}
-                <Card className="dupa-details-card">
+                <Card inert={saving} className="dupa-details-card">
                     <CardContent className="dupa-details-content">
-                        <div className="dupa-details-heading">
-                            <div>
-                                <h2 className="font-semibold">DUPA details</h2>
-                                <p className="text-xs text-muted-foreground">
-                                    Item information and project placement
-                                </p>
-                            </div>
-                            <span className="dupa-details-code">
-                                {dupa.pay_item_no}
-                            </span>
-                        </div>
-                        <form
-                            className="dupa-details-form"
-                            onSubmit={(e) => {
-                                e.preventDefault();
-                                details.put(`/admin/dupas/${dupa.id}`, {
-                                    preserveScroll: true,
-                                    onSuccess: notifyParentOfSave,
-                                });
-                            }}
+                        <details
+                            className="dupa-item-details"
+                            open={embedded ? undefined : true}
                         >
-                            <Field label="Item no.">
-                                <Input
-                                    value={details.data.pay_item_no}
-                                    onChange={(e) =>
-                                        details.setData(
-                                            'pay_item_no',
-                                            e.target.value,
-                                        )
-                                    }
-                                />
-                            </Field>
-                            <Field label="Description">
-                                <Input
-                                    value={details.data.description}
-                                    onChange={(e) =>
-                                        details.setData(
-                                            'description',
-                                            e.target.value,
-                                        )
-                                    }
-                                />
-                            </Field>
-                            <Field label="Unit">
-                                <Input
-                                    value={details.data.unit}
-                                    onChange={(e) =>
-                                        details.setData('unit', e.target.value)
-                                    }
-                                />
-                            </Field>
-                            <Field label="Section">
-                                <select
-                                    className="h-8 w-full rounded-md border px-3 text-sm"
-                                    value={details.data.section_id}
-                                    onChange={(e) => {
-                                        details.setData(
-                                            'section_id',
-                                            Number(e.target.value),
-                                        );
-                                        details.setData('sub_section_id', null);
-                                    }}
-                                >
-                                    {sections.map((section) => (
-                                        <option
-                                            key={section.id}
-                                            value={section.id}
-                                        >
-                                            {section.section}
-                                        </option>
-                                    ))}
-                                </select>
-                            </Field>
-                            <Field label="Subsection">
-                                <select
-                                    className="h-8 w-full rounded-md border px-3 text-sm"
-                                    value={details.data.sub_section_id ?? ''}
-                                    onChange={(e) =>
-                                        details.setData(
-                                            'sub_section_id',
-                                            e.target.value
-                                                ? Number(e.target.value)
-                                                : null,
-                                        )
-                                    }
-                                >
-                                    <option value="">
-                                        Directly under section
-                                    </option>
-                                    {currentSection?.sub_sections.map((sub) => (
-                                        <option key={sub.id} value={sub.id}>
-                                            {sub.sub_section}
-                                        </option>
-                                    ))}
-                                </select>
-                            </Field>
-                            <Field label="Display order">
-                                <Input
-                                    type="number"
-                                    min="0"
-                                    value={details.data.sort_order}
-                                    onChange={(e) =>
-                                        details.setData(
-                                            'sort_order',
-                                            Number(e.target.value),
-                                        )
-                                    }
-                                />
-                            </Field>
-                            {Object.keys(details.errors).length > 0 && (
-                                <div
-                                    className="dupa-details-errors"
-                                    role="alert"
-                                >
-                                    {Object.entries(details.errors).map(
-                                        ([field, message]) => (
-                                            <p key={field}>{message}</p>
-                                        ),
-                                    )}
-                                </div>
-                            )}
-                            <div className="dupa-details-footer">
-                                <span
-                                    role="status"
-                                    className="text-xs text-muted-foreground"
-                                >
-                                    {details.isDirty
-                                        ? 'You have unsaved changes.'
-                                        : 'All details are saved.'}
+                            <summary className="dupa-item-summary">
+                                <span className="dupa-details-code">
+                                    {details.data.pay_item_no}
                                 </span>
-                                <Button size="sm" disabled={details.processing}>
-                                    {details.processing
-                                        ? 'Saving…'
-                                        : 'Save DUPA details'}
-                                </Button>
-                            </div>
-                        </form>
+                                <span className="dupa-item-description">
+                                    {details.data.description ||
+                                        'Item description'}
+                                </span>
+                                <span className="dupa-item-unit">
+                                    Unit: {details.data.unit || '—'}
+                                </span>
+                                <span className="dupa-item-edit-hint">
+                                    Item details{' '}
+                                    <ChevronDown className="size-3.5" />
+                                </span>
+                            </summary>
+                            <form
+                                className="dupa-details-form"
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    void saveEstimate();
+                                }}
+                            >
+                                <Field label="Item no.">
+                                    <Input
+                                        value={details.data.pay_item_no}
+                                        onChange={(e) =>
+                                            details.setData(
+                                                'pay_item_no',
+                                                e.target.value,
+                                            )
+                                        }
+                                    />
+                                </Field>
+                                <Field label="Description">
+                                    <Input
+                                        value={details.data.description}
+                                        onChange={(e) =>
+                                            details.setData(
+                                                'description',
+                                                e.target.value,
+                                            )
+                                        }
+                                    />
+                                </Field>
+                                <Field label="Unit">
+                                    <Input
+                                        value={details.data.unit}
+                                        onChange={(e) =>
+                                            details.setData(
+                                                'unit',
+                                                e.target.value,
+                                            )
+                                        }
+                                    />
+                                </Field>
+                                <Field label="Section">
+                                    <select
+                                        className="h-8 w-full rounded-md border px-3 text-sm"
+                                        value={details.data.section_id}
+                                        onChange={(e) => {
+                                            details.setData(
+                                                'section_id',
+                                                Number(e.target.value),
+                                            );
+                                            details.setData(
+                                                'sub_section_id',
+                                                null,
+                                            );
+                                        }}
+                                    >
+                                        {sections.map((section) => (
+                                            <option
+                                                key={section.id}
+                                                value={section.id}
+                                            >
+                                                {section.section}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </Field>
+                                <Field label="Subsection">
+                                    <select
+                                        className="h-8 w-full rounded-md border px-3 text-sm"
+                                        value={
+                                            details.data.sub_section_id ?? ''
+                                        }
+                                        onChange={(e) =>
+                                            details.setData(
+                                                'sub_section_id',
+                                                e.target.value
+                                                    ? Number(e.target.value)
+                                                    : null,
+                                            )
+                                        }
+                                    >
+                                        <option value="">
+                                            Directly under section
+                                        </option>
+                                        {currentSection?.sub_sections.map(
+                                            (sub) => (
+                                                <option
+                                                    key={sub.id}
+                                                    value={sub.id}
+                                                >
+                                                    {sub.sub_section}
+                                                </option>
+                                            ),
+                                        )}
+                                    </select>
+                                </Field>
+                                <Field label="Display order">
+                                    <Input
+                                        type="number"
+                                        min="0"
+                                        value={details.data.sort_order}
+                                        onChange={(e) =>
+                                            details.setData(
+                                                'sort_order',
+                                                Number(e.target.value),
+                                            )
+                                        }
+                                    />
+                                </Field>
+                                {Object.keys(details.errors).length > 0 && (
+                                    <div
+                                        className="dupa-details-errors"
+                                        role="alert"
+                                    >
+                                        {Object.entries(details.errors).map(
+                                            ([field, message]) => (
+                                                <p key={field}>{message}</p>
+                                            ),
+                                        )}
+                                    </div>
+                                )}
+                            </form>
+                        </details>
                     </CardContent>
                 </Card>
 
                 <div
+                    inert={saving}
                     data-worksheet-toolbar
                     className="sticky top-0 z-20 flex flex-wrap items-center gap-1 border-b bg-background/95 py-1 backdrop-blur"
                 >
@@ -906,11 +966,21 @@ export default function DupaEdit({
                             {dirty[value] ? ' •' : ''}
                         </Button>
                     ))}
-                    <span className="ml-auto hidden text-xs text-muted-foreground lg:inline">
-                        Tab across cells · Enter down · Shift+Enter up
-                    </span>
-                    <span className="px-2 text-xs font-semibold tabular-nums">
-                        Direct {money.format(computed.direct)}
+                    <div className="dupa-quantity-control">
+                        <NumberField
+                            label="Quantity"
+                            readOnly={bound('estimate', 'quantity')}
+                            value={estimate.quantity}
+                            onChange={(value) =>
+                                setEstimate({
+                                    ...estimate,
+                                    quantity: value,
+                                })
+                            }
+                        />
+                    </div>
+                    <span className="dupa-toolbar-context">
+                        Editing {side.replace('_', '-')} estimate
                     </span>
                     <Button
                         type="button"
@@ -1028,7 +1098,7 @@ export default function DupaEdit({
                 >
                     <CardHeader>
                         <CardTitle>
-                            Detailed Unit Price Analysis{' '}
+                            Resources &amp; cost breakdown{' '}
                             <span className="text-xs font-normal">
                                 · {side.replace('_', '-')}
                             </span>
@@ -1036,28 +1106,12 @@ export default function DupaEdit({
                         <CardDescription>
                             {estimate.calculation_mode === 'imported_summary'
                                 ? 'This is an imported summary. Saving converts it to a resource-calculated estimate and replaces the imported total.'
-                                : 'Totals are recalculated from the included resources when saved.'}
+                                : 'Add labor, equipment, and materials below. Review the totals, then save all changes.'}
                         </CardDescription>
                     </CardHeader>
-                    <CardContent
-                        className={embedded ? 'space-y-2' : 'space-y-4'}
-                    >
+                    <CardContent className="space-y-2">
                         <div className="dupa-analysis-layout">
                             <div className="dupa-analysis-main space-y-2">
-                                <div className="grid gap-2 sm:grid-cols-4">
-                                    <NumberField
-                                        label="Quantity"
-                                        readOnly={bound('estimate', 'quantity')}
-                                        value={estimate.quantity}
-                                        onChange={(value) =>
-                                            setEstimate({
-                                                ...estimate,
-                                                quantity: value,
-                                            })
-                                        }
-                                    />
-                                </div>
-
                                 <div
                                     data-sheet-section="labor"
                                     className="dupa-resource-sheet border"
@@ -1082,7 +1136,7 @@ export default function DupaEdit({
                                             />
                                         )}
                                         {estimate.labors.length === 0 && (
-                                            <p className="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
+                                            <p className="rounded-md border border-dashed px-2 py-2 text-center text-xs text-muted-foreground">
                                                 No labor rows yet. Click Add
                                                 labor to begin.
                                             </p>
@@ -1845,7 +1899,7 @@ export default function DupaEdit({
                                                 item(s)
                                             </span>
                                         </div>
-                                        <div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_minmax(5rem,0.45fr)_minmax(7rem,0.65fr)_minmax(6rem,0.5fr)_minmax(8rem,0.8fr)_auto]">
+                                        <div className="dupa-material-entry grid gap-2">
                                             <div className="flex min-w-0 gap-2">
                                                 <div className="min-w-0 flex-1">
                                                     <ItemPicker
@@ -2013,7 +2067,10 @@ export default function DupaEdit({
                                 className="dupa-analysis-summary"
                                 aria-label="Estimate totals"
                             >
-                                <h3 className="dupa-panel-title">Total</h3>
+                                <h3 className="dupa-panel-title">
+                                    Estimate summary{' '}
+                                    <span>{side.replace('_', '-')}</span>
+                                </h3>
                                 <div className="dupa-totals">
                                     {Object.entries(computed).map(
                                         ([key, value]) => (
@@ -2078,12 +2135,25 @@ export default function DupaEdit({
                                                             <span>
                                                                 % of{' '}
                                                                 {key === 'vat'
-                                                                    ? 'D+F+G'
-                                                                    : 'D'}
+                                                                    ? 'direct + OCM + profit'
+                                                                    : 'direct cost'}
                                                             </span>
                                                         </label>
                                                     ) : (
-                                                        key
+                                                        ((
+                                                            {
+                                                                labor: 'Labor',
+                                                                equipment:
+                                                                    'Equipment',
+                                                                items: 'Materials',
+                                                                direct: 'Direct cost',
+                                                                total: 'Total estimated cost',
+                                                                unit: `Unit cost / ${details.data.unit || 'unit'}`,
+                                                            } as Record<
+                                                                string,
+                                                                string
+                                                            >
+                                                        )[key] ?? key)
                                                     )}
                                                 </div>
                                                 <div className="font-semibold">
@@ -2116,90 +2186,82 @@ export default function DupaEdit({
                                 </ul>
                             </div>
                         )}
-                        <div
-                            data-sheet-footer
-                            className={`flex flex-wrap items-center gap-2 border p-2 ${embedded ? 'justify-end' : 'justify-between'}`}
-                        >
-                            {!embedded && (
-                                <Button asChild variant="outline">
-                                    <Link
-                                        href={`/admin/projects/${project.id}/dupa`}
-                                        onClick={(event) => {
-                                            if (
-                                                (dirty.ADD ||
-                                                    dirty.NON_ADD ||
-                                                    backupDirty) &&
-                                                !window.confirm(
-                                                    'Leave this DUPA and discard unsaved estimate changes?',
-                                                )
-                                            ) {
-                                                event.preventDefault();
-                                            }
-                                        }}
-                                    >
-                                        <ArrowLeft /> DUPA items
-                                    </Link>
-                                </Button>
-                            )}
-                            <div className="flex flex-wrap gap-2">
-                                {!embedded && navigation.previous_id && (
-                                    <Button asChild variant="outline">
-                                        <Link
-                                            href={`/admin/dupas/${navigation.previous_id}/edit`}
-                                            onClick={(event) => {
-                                                if (
-                                                    (dirty.ADD ||
-                                                        dirty.NON_ADD ||
-                                                        backupDirty) &&
-                                                    !window.confirm(
-                                                        'Open the previous DUPA and discard unsaved estimate changes?',
-                                                    )
-                                                ) {
-                                                    event.preventDefault();
-                                                }
-                                            }}
-                                        >
-                                            <ArrowLeft /> Previous DUPA
-                                        </Link>
-                                    </Button>
-                                )}
-                                <Button
-                                    disabled={
-                                        saving ||
-                                        (computed.direct > 0 &&
-                                            number(estimate.quantity) <= 0)
-                                    }
-                                    className="sheet-save"
-                                    onClick={() => saveEstimate()}
-                                >
-                                    {saving
-                                        ? 'Saving…'
-                                        : `Save ${side.replace('_', '-')} estimate`}
-                                </Button>
-                                {!embedded && navigation.next_id && (
-                                    <Button
-                                        className="sheet-save"
-                                        disabled={
-                                            saving ||
-                                            dirty[
-                                                side === 'ADD'
-                                                    ? 'NON_ADD'
-                                                    : 'ADD'
-                                            ] ||
-                                            (computed.direct > 0 &&
-                                                number(estimate.quantity) <= 0)
-                                        }
-                                        onClick={() =>
-                                            saveEstimate(navigation.next_id)
-                                        }
-                                    >
-                                        Save & next <ArrowRight />
-                                    </Button>
-                                )}
-                            </div>
-                        </div>
                     </CardContent>
                 </Card>
+                <div
+                    data-sheet-footer
+                    className={`flex flex-wrap items-center gap-2 border p-2 ${embedded ? 'justify-end' : 'justify-between'}`}
+                >
+                    {!embedded && (
+                        <Button asChild variant="outline">
+                            <Link
+                                href={`/admin/projects/${project.id}/dupa`}
+                                onClick={(event) => {
+                                    if (
+                                        (dirty.ADD ||
+                                            dirty.NON_ADD ||
+                                            backupDirty ||
+                                            details.isDirty) &&
+                                        !window.confirm(
+                                            'Leave this DUPA and discard unsaved estimate changes?',
+                                        )
+                                    ) {
+                                        event.preventDefault();
+                                    }
+                                }}
+                            >
+                                <ArrowLeft /> DUPA items
+                            </Link>
+                        </Button>
+                    )}
+                    <span
+                        role="status"
+                        className="dupa-save-status text-xs text-muted-foreground"
+                    >
+                        {saving
+                            ? 'Saving…'
+                            : details.isDirty ||
+                                dirty.ADD ||
+                                dirty.NON_ADD ||
+                                backupDirty
+                              ? 'Unsaved changes'
+                              : 'Saved ✓'}
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                        {!embedded && navigation.previous_id && (
+                            <Button asChild variant="outline">
+                                <Link
+                                    href={`/admin/dupas/${navigation.previous_id}/edit`}
+                                    onClick={(event) => {
+                                        if (
+                                            (dirty.ADD ||
+                                                dirty.NON_ADD ||
+                                                backupDirty ||
+                                                details.isDirty) &&
+                                            !window.confirm(
+                                                'Open the previous DUPA and discard unsaved estimate changes?',
+                                            )
+                                        ) {
+                                            event.preventDefault();
+                                        }
+                                    }}
+                                >
+                                    <ArrowLeft /> Previous DUPA
+                                </Link>
+                            </Button>
+                        )}
+                        <Button
+                            disabled={
+                                saving ||
+                                !(details.isDirty || dirty.ADD || dirty.NON_ADD)
+                            }
+                            className="sheet-save"
+                            onClick={() => saveEstimate()}
+                        >
+                            {saving ? 'Saving…' : 'Save All Changes'}
+                        </Button>
+                    </div>
+                </div>
             </div>
         </>
     );

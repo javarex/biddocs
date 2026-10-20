@@ -43,7 +43,7 @@ export default function Login({ status, canResetPassword }: Props) {
                         <div className="space-y-1.5">
                             <Label
                                 htmlFor="login"
-                                className="text-xs font-semibold text-[#374151] dark:text-slate-300"
+                                className="text-xs font-semibold text-foreground"
                             >
                                 Username or email
                             </Label>
@@ -56,7 +56,7 @@ export default function Login({ status, canResetPassword }: Props) {
                                 tabIndex={1}
                                 autoComplete="username"
                                 placeholder="Enter your username or email"
-                                className="h-10 rounded-xl border-[#D1D5DB] bg-[#F9FAFB] text-sm focus:border-[#ECC925] focus:ring-1 focus:ring-[#ECC925] dark:border-slate-700 dark:bg-slate-800"
+                                className="h-10 rounded-xl border-input bg-background text-sm focus:border-ring focus:ring-1 focus:ring-ring"
                             />
                             <InputError message={errors.login} />
                         </div>
@@ -65,14 +65,14 @@ export default function Login({ status, canResetPassword }: Props) {
                             <div className="flex items-center justify-between">
                                 <Label
                                     htmlFor="password"
-                                    className="text-xs font-semibold text-[#374151] dark:text-slate-300"
+                                    className="text-xs font-semibold text-foreground"
                                 >
                                     Password
                                 </Label>
                                 {canResetPassword && (
                                     <TextLink
                                         href={request()}
-                                        className="text-xs text-[#592701] hover:text-[#211401]"
+                                        className="text-xs text-primary hover:text-primary/80"
                                         tabIndex={5}
                                     >
                                         Forgot password?
@@ -86,7 +86,7 @@ export default function Login({ status, canResetPassword }: Props) {
                                 tabIndex={2}
                                 autoComplete="current-password"
                                 placeholder="Enter your password"
-                                className="h-10 rounded-xl border-[#D1D5DB] bg-[#F9FAFB] text-sm focus:border-[#ECC925] focus:ring-1 focus:ring-[#ECC925] dark:border-slate-700 dark:bg-slate-800"
+                                className="h-10 rounded-xl border-input bg-background text-sm focus:border-ring focus:ring-1 focus:ring-ring"
                             />
                             <InputError message={errors.password} />
                         </div>
@@ -96,11 +96,11 @@ export default function Login({ status, canResetPassword }: Props) {
                                 id="remember"
                                 name="remember"
                                 tabIndex={3}
-                                className="border-[#D1D5DB]"
+                                className="border-input"
                             />
                             <Label
                                 htmlFor="remember"
-                                className="cursor-pointer text-xs text-[#6B7280] dark:text-slate-400"
+                                className="cursor-pointer text-xs text-muted-foreground"
                             >
                                 Remember me for 30 days
                             </Label>
@@ -108,7 +108,7 @@ export default function Login({ status, canResetPassword }: Props) {
 
                         <Button
                             type="submit"
-                            className="h-10 w-full rounded-xl bg-[#ECC925] text-sm font-semibold text-[#211401] hover:bg-[#D4B420]"
+                            className="h-10 w-full rounded-xl bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90"
                             tabIndex={4}
                             disabled={processing}
                             data-test="login-button"

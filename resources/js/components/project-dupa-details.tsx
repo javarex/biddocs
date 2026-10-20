@@ -31,7 +31,7 @@ const categories: Record<string, string[]> = {
     Others: ['Home Economics'],
 };
 const control =
-    'w-full min-w-0 rounded-none border-0 bg-transparent px-0 py-1 text-sm font-semibold text-slate-950 shadow-none outline-none focus-visible:ring-1 focus-visible:ring-emerald-600 focus-visible:ring-inset';
+    'w-full min-w-0 rounded-none border-0 bg-transparent px-0 py-0.5 text-xs font-semibold text-slate-950 shadow-none outline-none focus-visible:ring-1 focus-visible:ring-emerald-600 focus-visible:ring-inset';
 
 export default function ProjectDupaDetails({
     project,
@@ -69,8 +69,8 @@ export default function ProjectDupaDetails({
         });
     };
     const field = (name: keyof Details, label: string, span = '', rows = 0) => (
-        <div className={`border border-slate-400 px-2 py-1.5 ${span}`}>
-            <div className="mb-0.5 flex items-center gap-2">
+        <div className={`border border-slate-400 px-2 py-1 ${span}`}>
+            <div className="mb-0 flex items-center gap-2">
                 <label
                     className="block text-xs"
                     htmlFor={`dupa-project-${name}`}
@@ -125,9 +125,9 @@ export default function ProjectDupaDetails({
         options: string[],
         span = '',
     ) => (
-        <div className={`border border-slate-400 px-2 py-1.5 ${span}`}>
+        <div className={`border border-slate-400 px-2 py-1 ${span}`}>
             <label
-                className="mb-0.5 block text-xs"
+                className="mb-0 block text-xs"
                 htmlFor={`dupa-project-${name}`}
             >
                 {label}
@@ -173,7 +173,7 @@ export default function ProjectDupaDetails({
 
     return (
         <form onSubmit={submit}>
-            <div className="grid grid-cols-[minmax(10rem,0.75fr)_minmax(0,2fr)_minmax(0,1fr)] text-sm">
+            <div className="grid grid-cols-[minmax(10rem,0.75fr)_minmax(0,2fr)_minmax(0,1fr)] text-xs">
                 {field('project_date', '1.) Project Date:')}
                 {field('project_name', '2.) Name of Project:', 'col-span-2', 2)}
                 {field('location', '3.) Location:', 'col-span-3', 2)}
@@ -189,9 +189,9 @@ export default function ProjectDupaDetails({
                     3,
                 )}
                 {field('dimension', '5.1) Dimension:', '', 4)}
-                <div className="border border-slate-400 px-2 py-1.5">
+                <div className="border border-slate-400 px-2 py-1">
                     <label
-                        className="mb-0.5 block text-xs"
+                        className="mb-0 block text-xs"
                         htmlFor="dupa-project-category"
                     >
                         6.) Category:
@@ -265,7 +265,7 @@ export default function ProjectDupaDetails({
                     'col-span-2',
                 )}
             </div>
-            <div className="flex flex-wrap items-center gap-3 border-x border-b border-slate-400 px-3 py-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2 border-x border-b border-slate-400 px-2 py-1 text-xs">
                 <div className="mr-auto font-semibold">
                     10.) Summary of Estimated Cost
                 </div>
@@ -281,7 +281,7 @@ export default function ProjectDupaDetails({
                         type="number"
                         min="0"
                         step="0.01"
-                        className="h-8 w-44 min-w-0 bg-transparent px-2 font-semibold text-slate-950 outline-none focus-visible:ring-1 focus-visible:ring-emerald-600"
+                        className="h-7 w-40 min-w-0 bg-transparent px-2 font-semibold text-slate-950 outline-none focus-visible:ring-1 focus-visible:ring-emerald-600"
                         value={form.data.allocated_amount ?? ''}
                         onChange={(event) =>
                             form.setData('allocated_amount', event.target.value)
@@ -299,7 +299,7 @@ export default function ProjectDupaDetails({
                 <InputError message={form.errors.allocated_amount} />
             </div>
             {editable && (
-                <div className="flex justify-end gap-2 border-x border-b border-slate-400 p-2 print:hidden">
+                <div className="flex justify-end gap-2 border-x border-b border-slate-400 px-2 py-1 print:hidden">
                     <Button
                         type="button"
                         variant="outline"

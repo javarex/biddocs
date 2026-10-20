@@ -163,7 +163,9 @@ export default function BackupDaysCell({
 
     return (
         <div className="backup-days-cell min-w-0">
-            <div className="relative min-w-0">
+            <div
+                className={`relative min-w-0 ${autoCompute ? 'backup-days-controls' : ''}`}
+            >
                 {autoCompute && <LaborDaysAuto {...autoCompute} />}
                 <Input
                     ref={input}

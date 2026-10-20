@@ -257,7 +257,7 @@ class ProjectController extends Controller
     {
         Gate::authorize('update', $project);
         $data = $this->validated($request, $project);
-        DB::transaction(function () use ($project, $data): void {
+        DB::transaction(function () use ($request, $project, $data): void {
             $miscellaneous = $data['miscellaneous'] ?? null;
             unset($data['prepared_by'], $data['miscellaneous']);
             $project->update($data + ['estimates_updated_at' => now()]);
@@ -270,9 +270,23 @@ class ProjectController extends Controller
             if ($miscellaneous !== null) {
                 $this->syncMiscellaneous($project, $miscellaneous);
             }
+            if ($request->has('charges')) {
+                $request->validate(['charges' => ['required', 'array']]);
+                $chargeRequest = clone $request;
+                $chargeRequest->replace($request->input('charges'));
+                try {
+                    app(ProjectEstimateController::class)->updateProject($chargeRequest, $project);
+                } catch (ValidationException $exception) {
+                    $errors = [];
+                    foreach ($exception->errors() as $field => $messages) {
+                        $errors["charges.{$field}"] = $messages;
+                    }
+                    throw ValidationException::withMessages($errors);
+                }
+            }
         });
 
-        return back()->with('success', 'Project details updated.');
+        return back()->with('success', 'Project changes saved.');
     }
 
     private function syncProjectCharges(Project $project): void

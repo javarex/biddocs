@@ -4,13 +4,13 @@ import { useState } from 'react';
 import PageHeader from '@/components/page-header';
 import type { Setting, Misc, Total } from '@/components/project-charges';
 import ProjectForm from '@/components/project-form';
-import type { MarkupRateBand } from '@/components/project-markup-rates';
 import type {
     ProjectFields,
     Signatory,
     SignatoryRoleOption,
     SignatorySystemUser,
 } from '@/components/project-form';
+import type { MarkupRateBand } from '@/components/project-markup-rates';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -78,7 +78,7 @@ export default function ProjectEdit({
                 <PageHeader
                     compact
                     title={`Edit ${project.project_name}`}
-                    description="Complete the project details and signatories. Encode items, estimates, and project charges on the DUPA page. Changes in each step are saved independently."
+                    description="Edit project details, signatories, and charges, then save all changes together. Encode items and estimates on the DUPA page."
                     backHref={`/admin/projects/${project.id}`}
                     action={
                         canViewDupa && (
@@ -118,10 +118,13 @@ export default function ProjectEdit({
                     <ProjectForm
                         worksheet
                         markupRateBands={markupRateBands}
-                        key={JSON.stringify([
-                            project.pol,
-                            project.miscellaneous,
-                        ])}
+                        key={JSON.stringify(project)}
+                        chargeData={{
+                            pol: project.pol,
+                            settings: project.estimate_settings,
+                            miscellaneous: project.miscellaneous,
+                            totals,
+                        }}
                         activePanel={
                             step === 'signatories' ? 'signatories' : 'details'
                         }

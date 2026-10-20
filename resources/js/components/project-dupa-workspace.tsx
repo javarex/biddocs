@@ -38,7 +38,6 @@ export type DupaSection = {
     sub_sections: SubSection[];
 };
 export default function ProjectDupaActions({
-    projectId,
     sections,
     openEstimateId,
 }: {
@@ -53,12 +52,7 @@ export default function ProjectDupaActions({
         ])
         .find((item) => item.id === openEstimateId);
 
-    return (
-        <>
-            <AddDupaItem projectId={projectId} sections={sections} />
-            {item && <DupaEstimateDialog key={item.id} item={item} />}
-        </>
-    );
+    return <>{item && <DupaEstimateDialog key={item.id} item={item} />}</>;
 }
 
 export function DupaEstimateDialog({
@@ -72,12 +66,24 @@ export function DupaEstimateDialog({
     const [loading, setLoading] = useState(true);
     const frame = useRef<HTMLIFrameElement>(null);
     const changed = useRef(false);
+    const unsaved = useRef(false);
+    const saving = useRef(false);
     useEffect(() => {
         if (!open) {
             return;
         }
 
         const saved = (event: MessageEvent) => {
+            if (
+                event.origin === window.location.origin &&
+                event.source === frame.current?.contentWindow &&
+                event.data?.type === 'biddocs:dupa-dirty' &&
+                event.data.dupaId === item.id
+            ) {
+                unsaved.current = Boolean(event.data.dirty);
+                saving.current = Boolean(event.data.saving);
+            }
+
             if (
                 event.origin === window.location.origin &&
                 event.source === frame.current?.contentWindow &&
@@ -96,6 +102,15 @@ export function DupaEstimateDialog({
         <Dialog
             open={open}
             onOpenChange={(next) => {
+                if (
+                    !next &&
+                    (saving.current ||
+                        (unsaved.current &&
+                            !window.confirm('Discard unsaved DUPA changes?')))
+                ) {
+                    return;
+                }
+
                 setOpen(next);
 
                 if (!next) {
@@ -109,20 +124,20 @@ export function DupaEstimateDialog({
             }}
         >
             <DialogContent
-                className="flex h-[94vh] max-h-[94vh] w-[96vw] max-w-[96vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[96vw]"
+                className="flex h-[98dvh] max-h-[98dvh] w-[99vw] max-w-[99vw] flex-col gap-0 overflow-hidden rounded-xl border-emerald-900/20 p-0 shadow-2xl sm:h-[96dvh] sm:max-h-[96dvh] sm:w-[96vw] sm:max-w-[96vw]"
                 onFocusOutside={(event) => {
                     if (event.target instanceof HTMLIFrameElement) {
                         event.preventDefault();
                     }
                 }}
             >
-                <DialogHeader className="gap-1 border-b px-4 py-2">
-                    <DialogTitle className="text-base">
+                <DialogHeader className="gap-1 border-b border-emerald-800/15 bg-gradient-to-r from-emerald-50 to-white px-5 py-3 pr-12 text-left">
+                    <DialogTitle className="text-base font-semibold text-emerald-950">
                         Detailed Unit Price Analysis — {item.pay_item_no}
                     </DialogTitle>
-                    <DialogDescription className="text-xs">
-                        Edit rows like a worksheet. Tab across cells; Enter
-                        moves to the next row.
+                    <DialogDescription className="text-xs text-emerald-900/70">
+                        Build your estimate, review the cost breakdown, and save
+                        all changes in one place.
                     </DialogDescription>
                 </DialogHeader>
                 <div className="relative min-h-0 flex-1">
@@ -158,12 +173,18 @@ type DupaSourceOption = {
     item_heading: string | null;
 };
 
-function AddDupaItem({
+export function AddDupaItem({
     projectId,
     sections,
+    sectionId,
+    subSectionId,
+    inline = false,
 }: {
     projectId: number;
     sections: DupaSection[];
+    sectionId?: number;
+    subSectionId?: number;
+    inline?: boolean;
 }) {
     const [search, setSearch] = useState('');
     const [sources, setSources] = useState<DupaSourceOption[]>([]);
@@ -230,12 +251,26 @@ function AddDupaItem({
         <Dialog open={open} onOpenChange={setOpen}>
             <Button
                 type="button"
+                variant={inline ? 'ghost' : 'default'}
+                size={inline ? 'sm' : 'default'}
+                className={
+                    inline
+                        ? 'h-7 justify-start text-xs text-primary print:hidden'
+                        : undefined
+                }
                 onClick={() => {
                     form.setData(
                         'section_id',
-                        sections.length ? String(sections[0].id) : '',
+                        sectionId
+                            ? String(sectionId)
+                            : sections.length
+                              ? String(sections[0].id)
+                              : '',
                     );
-                    form.setData('sub_section_id', '');
+                    form.setData(
+                        'sub_section_id',
+                        subSectionId ? String(subSectionId) : '',
+                    );
                     form.setData('dupa_source_id', '');
                     setSelectedSource(null);
                     setLoadingSources(true);
