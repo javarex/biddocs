@@ -790,11 +790,12 @@
         grid-column: 1 / -1;
     }
 }
-@media (min-width: 1280px) {
+@media (min-width: 1024px) {
     .dupa-material-entry {
         grid-template-columns:
-            minmax(14rem, 2fr) repeat(4, minmax(5rem, 1fr))
-            auto;
+            minmax(16rem, 3fr) 3.5rem 7.5rem 5rem
+            minmax(6rem, 1fr) auto;
+        align-items: center;
     }
     .dupa-material-entry > div:first-child {
         grid-column: auto;

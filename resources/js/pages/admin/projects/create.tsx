@@ -33,7 +33,7 @@ export default function ProjectCreate({
                 <PageHeader
                     compact
                     title="Create project"
-                    description="Enter the project details, then build its sections and DUPA estimates."
+                    description="Enter project information using the DUPA worksheet layout. Add items and estimates after creating the project."
                     backHref="/admin/projects"
                 />
                 <ProjectForm

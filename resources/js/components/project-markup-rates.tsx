@@ -23,15 +23,29 @@ const peso = new Intl.NumberFormat('en-PH', {
     maximumFractionDigits: 2,
 });
 
-const rangeLabel = (band: MarkupRateBand, previous?: MarkupRateBand) => {
+const compactPeso = new Intl.NumberFormat('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+    notation: 'compact',
+    compactDisplay: 'short',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+});
+
+const rangeLabel = (
+    band: MarkupRateBand,
+    previous?: MarkupRateBand,
+    formatter = compactPeso,
+) => {
     if (!previous) {
-        return `Up to ${peso.format(band.maximum_amount ?? 0)}`;
+        return `Up to ${formatter.format(band.maximum_amount ?? 0)}`;
     }
 
-    const lower = peso.format(previous.maximum_amount ?? 0);
+    const lower = formatter.format(previous.maximum_amount ?? 0);
+
     return band.maximum_amount === null
         ? `Above ${lower}`
-        : `Above ${lower} up to ${peso.format(band.maximum_amount)}`;
+        : `Above ${lower} up to ${formatter.format(band.maximum_amount)}`;
 };
 
 export default function ProjectMarkupRates({
@@ -61,12 +75,18 @@ export default function ProjectMarkupRates({
             <DialogContent className="max-w-2xl">
                 <DialogHeader>
                     <DialogTitle>Project markup rates</DialogTitle>
-                    <DialogDescription>
+                    <DialogDescription
+                        title={
+                            amount === null
+                                ? undefined
+                                : `Allocated amount: ${peso.format(amount)}`
+                        }
+                    >
                         Reference for DUPA OCM, contractor&apos;s profit, and
                         VAT.
                         {amount === null
                             ? ' Set an allocated amount to identify the applicable row.'
-                            : ` Allocated amount: ${peso.format(amount)}.`}
+                            : ` Allocated amount: ${compactPeso.format(amount)}.`}
                     </DialogDescription>
                 </DialogHeader>
                 <div className="overflow-x-auto">
@@ -100,7 +120,14 @@ export default function ProjectMarkupRates({
                                         key={band.id}
                                         className={`border-b last:border-b-0 ${selected ? 'bg-primary/10 font-semibold' : ''}`}
                                     >
-                                        <td className="px-3 py-2">
+                                        <td
+                                            className="px-3 py-2"
+                                            title={rangeLabel(
+                                                band,
+                                                bands[index - 1],
+                                                peso,
+                                            )}
+                                        >
                                             {rangeLabel(band, bands[index - 1])}
                                             {selected && (
                                                 <span className="ml-2 rounded bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground">

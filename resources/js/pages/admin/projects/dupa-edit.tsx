@@ -306,6 +306,79 @@ export default function DupaEdit({
             </select>
         );
     };
+    async function persistCurrentEstimate(
+        sourceEstimate: Estimate,
+    ): Promise<Estimate> {
+        const response = await fetch(
+            `/admin/dupas/${dupa.id}/estimates/${side}`,
+            {
+                method: 'PUT',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf_token,
+                },
+                body: JSON.stringify(sourceEstimate),
+            },
+        );
+        const payload = await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                Object.values(payload.errors ?? {})
+                    .flat()
+                    .join(' ') ||
+                    payload.message ||
+                    'Unable to save estimate changes.',
+            );
+        }
+
+        const persisted = payload.estimate as Estimate;
+        const savedKey = estimateDraftKey(persisted);
+        const savedEstimate = persisted;
+        setEstimates((current) => ({
+            ...current,
+            [side]: savedEstimate,
+        }));
+        setSavedEstimateKeys((current) => ({
+            ...current,
+            [side]: savedKey,
+        }));
+        notifyParentOfSave();
+
+        return savedEstimate;
+    }
+
+    async function openBackups() {
+        if (saving) {
+            return;
+        }
+
+        if (!dirty[side]) {
+            setBackupOpen(true);
+
+            return;
+        }
+
+        setSaving(true);
+        setEstimateErrors({});
+
+        try {
+            await persistCurrentEstimate(estimate);
+            setBackupOpen(true);
+        } catch (error) {
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : 'Unable to save estimate changes.';
+            setEstimateErrors({ backup: message });
+            toast.error(message);
+        } finally {
+            setSaving(false);
+        }
+    }
+
     async function switchResult(
         kind: 'estimate' | 'labors' | 'equipment' | 'items',
         field: string,
@@ -325,43 +398,7 @@ export default function DupaEdit({
             }
 
             if (dirty[side]) {
-                const response = await fetch(
-                    `/admin/dupas/${dupa.id}/estimates/${side}`,
-                    {
-                        method: 'PUT',
-                        credentials: 'same-origin',
-                        headers: {
-                            Accept: 'application/json',
-                            'Content-Type': 'application/json',
-                            'X-CSRF-TOKEN': csrf_token,
-                        },
-                        body: JSON.stringify(sourceEstimate),
-                    },
-                );
-                const payload = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(
-                        Object.values(payload.errors ?? {})
-                            .flat()
-                            .join(' ') ||
-                            payload.message ||
-                            'Unable to save estimate changes.',
-                    );
-                }
-
-                sourceEstimate = payload.estimate as Estimate;
-                const savedKey = estimateDraftKey(sourceEstimate);
-                const savedEstimate = sourceEstimate;
-                setEstimates((current) => ({
-                    ...current,
-                    [side]: savedEstimate,
-                }));
-                setSavedEstimateKeys((current) => ({
-                    ...current,
-                    [side]: savedKey,
-                }));
-                notifyParentOfSave();
+                sourceEstimate = await persistCurrentEstimate(sourceEstimate);
             }
 
             const document = {
@@ -1040,8 +1077,8 @@ export default function DupaEdit({
                     <Button
                         type="button"
                         variant="outline"
-                        disabled={saving || dirty[side]}
-                        onClick={() => setBackupOpen(true)}
+                        disabled={saving}
+                        onClick={() => void openBackups()}
                     >
                         Backups ({estimate.backups?.length ?? 0}) ·{' '}
                         {usedBackupKeys(estimate.backup_applied?.document).size}{' '}
