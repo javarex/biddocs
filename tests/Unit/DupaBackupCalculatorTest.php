@@ -238,6 +238,40 @@ class DupaBackupCalculatorTest extends TestCase
         $this->assertSame([], Usage::referencedKeys($document));
     }
 
+    public function test_equipment_days_use_actual_and_bound_unit_counts(): void
+    {
+        $doc = $this->namedDocument([], [['key' => 'volume', 'value' => 100], ['key' => 'units', 'value' => 2]]);
+        $doc['bindings'] = [['kind' => 'equipment', 'row_uuid' => 'excavator', 'field' => 'no_of_days', 'formula' => '=ROUNDUP(sample.outputs.volume/20/row.no_of_units,0)']];
+        $calculator = new Calculator;
+        $estimate = $this->estimate();
+        $this->assertSame(5.0, $calculator->preview($doc, $estimate)['estimate']['equipment'][0]['no_of_days']);
+        $estimate['equipment'][0]['no_of_units'] = 3;
+        $this->assertSame(2.0, $calculator->preview($doc, $estimate)['estimate']['equipment'][0]['no_of_days']);
+        $doc['bindings'][] = ['kind' => 'equipment', 'row_uuid' => 'excavator', 'field' => 'no_of_units', 'formula' => '=sample.outputs.units'];
+        $result = $calculator->preview($doc, $estimate)['estimate']['equipment'][0];
+        $this->assertSame(2.0, $result['no_of_units']);
+        $this->assertSame(3.0, $result['no_of_days']);
+    }
+
+    public function test_equipment_days_reject_zero_units(): void
+    {
+        $doc = $this->namedDocument([], [['key' => 'volume', 'value' => 100]]);
+        $doc['bindings'] = [['kind' => 'equipment', 'row_uuid' => 'excavator', 'field' => 'no_of_days', 'formula' => '=ROUNDUP(sample.outputs.volume/20/row.no_of_units,0)']];
+        $estimate = $this->estimate();
+        $estimate['equipment'][0]['no_of_units'] = 0;
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('No. of Units must be greater than zero');
+        (new Calculator)->preview($doc, $estimate);
+    }
+
+    public function test_equipment_row_reference_cannot_be_used_for_labor_days(): void
+    {
+        $doc = $this->namedDocument([], [['key' => 'volume', 'value' => 100]]);
+        $doc['bindings'] = [['kind' => 'labors', 'row_uuid' => 'labor', 'field' => 'no_of_days', 'formula' => '=ROUNDUP(sample.outputs.volume/20/row.no_of_units,0)']];
+        $this->expectException(InvalidArgumentException::class);
+        (new Calculator)->preview($doc, $this->estimate());
+    }
+
     public function test_auto_labor_days_follow_the_actual_row_person_count_and_productivity(): void
     {
         $doc = $this->namedDocument([], [['key' => 'manual_volume', 'label' => 'Manual excavation', 'value' => 62.69]]);

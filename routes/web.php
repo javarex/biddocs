@@ -90,6 +90,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::post('dupas/{dupa}/copy-add', [ProjectEstimateController::class, 'copyAdd'])->name('dupas.copy-add');
         Route::post('dupas/{dupa}/backup-templates/{template}/exclusion', [DupaBackupController::class, 'excludeTemplate'])->name('dupas.backup-templates.exclusion');
         Route::post('dupas/{dupa}/estimates/{type}/backups/{action}', [DupaBackupController::class, 'handle'])->name('dupas.backups');
+        Route::put('dupas/{dupa}/save-all', [ProjectEstimateController::class, 'saveAll'])->name('dupas.save-all');
         Route::put('dupas/{dupa}/estimates/{type}', [ProjectEstimateController::class, 'updateEstimate'])->name('dupas.estimates.update');
         Route::put('projects/{project}/estimate-settings', [ProjectEstimateController::class, 'updateProject'])->name('projects.estimate-settings.update');
 

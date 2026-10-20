@@ -6,6 +6,7 @@ import ProjectCharges from '@/components/project-charges';
 import type { Setting, Misc, Total } from '@/components/project-charges';
 import ProjectDupaDetails from '@/components/project-dupa-details';
 import ProjectDupaActions, {
+    AddDupaItem,
     DupaEstimateDialog,
 } from '@/components/project-dupa-workspace';
 import type { DupaSection } from '@/components/project-dupa-workspace';
@@ -50,7 +51,7 @@ export default function ProjectDupa({
             0,
         );
     const selectedTotal = total(side);
-    const cell = 'border border-slate-400 px-2 py-2';
+    const cell = 'border border-slate-400 px-2 py-1';
     const row = (item: Item) => {
         const estimate = item.estimates[side];
 
@@ -65,7 +66,7 @@ export default function ProjectDupa({
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                className="shrink-0 print:hidden"
+                                className="h-6 shrink-0 gap-1 px-2 text-xs print:hidden"
                                 aria-label={`Edit DUPA ${item.pay_item_no}`}
                                 onClick={() => setEditingItem(item)}
                             >
@@ -96,6 +97,21 @@ export default function ProjectDupa({
         );
     };
 
+    const addItemRow = (sectionId?: number, subSectionId?: number) =>
+        project.can_edit && (
+            <tr className="bg-green-50/50 print:hidden">
+                <td colSpan={8} className="border border-slate-300 px-2 py-1">
+                    <AddDupaItem
+                        projectId={project.id}
+                        sections={dupaSections}
+                        sectionId={sectionId}
+                        subSectionId={subSectionId}
+                        inline
+                    />
+                </td>
+            </tr>
+        );
+
     return (
         <>
             <Head title={`DUPA · ${project.project_name}`} />
@@ -106,40 +122,48 @@ export default function ProjectDupa({
                     onClose={() => setEditingItem(null)}
                 />
             )}
-            <div className="space-y-6 p-4 md:p-6">
+            {project.can_edit && (
+                <ProjectDupaActions
+                    projectId={project.id}
+                    sections={dupaSections}
+                    openEstimateId={openEstimateId}
+                />
+            )}
+            <div className="space-y-2 p-3">
                 <PageHeader
+                    compact
                     title="DUPA"
                     description={project.project_name}
                     action={
-                        project.can_edit ? (
-                            <ProjectDupaActions
-                                projectId={project.id}
-                                sections={dupaSections}
-                                openEstimateId={openEstimateId}
-                            />
-                        ) : undefined
+                        <div className="flex flex-wrap items-center gap-3">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="mr-1 text-xs font-medium text-muted-foreground">
+                                    Weight, quantity and unit cost:
+                                </span>
+                                {(['ADD', 'NON_ADD'] as const).map((type) => (
+                                    <Button
+                                        key={type}
+                                        size="sm"
+                                        className="h-7 px-2.5 text-xs"
+                                        variant={
+                                            side === type
+                                                ? 'default'
+                                                : 'outline'
+                                        }
+                                        onClick={() => setSide(type)}
+                                        aria-pressed={side === type}
+                                    >
+                                        {type.replace('_', '-')}
+                                    </Button>
+                                ))}
+                            </div>
+                        </div>
                     }
                     backHref="/admin/projects"
                 />
-                <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium">
-                        Weight, quantity and unit cost:
-                    </span>
-                    {(['ADD', 'NON_ADD'] as const).map((type) => (
-                        <Button
-                            key={type}
-                            size="sm"
-                            variant={side === type ? 'default' : 'outline'}
-                            onClick={() => setSide(type)}
-                            aria-pressed={side === type}
-                        >
-                            {type.replace('_', '-')}
-                        </Button>
-                    ))}
-                </div>
                 <div className="overflow-x-auto rounded-lg border bg-white text-slate-950 shadow-sm">
-                    <div className="min-w-[1100px] p-5">
-                        <div className="border border-slate-400 py-3 text-center text-base font-bold">
+                    <div className="min-w-[960px] p-2 md:p-3">
+                        <div className="border border-slate-400 py-1.5 text-center text-sm font-bold">
                             SUMMARY OF ESTIMATED COST
                         </div>
                         <ProjectDupaDetails
@@ -147,7 +171,7 @@ export default function ProjectDupa({
                             markupRateBands={markupRateBands}
                         />
                         <table className="w-full border-collapse text-xs tabular-nums">
-                            <caption className="border border-slate-400 p-2 text-left text-sm font-semibold">
+                            <caption className="border border-slate-400 px-2 py-1 text-left text-xs font-semibold">
                                 10.) Summary of Estimated Cost
                             </caption>
                             <thead className="bg-slate-50 text-center">
@@ -202,6 +226,7 @@ export default function ProjectDupa({
                                             </th>
                                         </tr>
                                         {section.items.map(row)}
+                                        {addItemRow(section.id)}
                                         {section.sub_sections.map((sub) => (
                                             <Fragment key={sub.id}>
                                                 <tr>
@@ -213,6 +238,7 @@ export default function ProjectDupa({
                                                     </th>
                                                 </tr>
                                                 {sub.items.map(row)}
+                                                {addItemRow(section.id, sub.id)}
                                             </Fragment>
                                         ))}
                                     </Fragment>
@@ -228,6 +254,7 @@ export default function ProjectDupa({
                                         </td>
                                     </tr>
                                 )}
+                                {project.sections.length === 0 && addItemRow()}
                             </tbody>
                             <tfoot>
                                 <tr className="bg-slate-100 font-bold">
@@ -246,7 +273,7 @@ export default function ProjectDupa({
                                 </tr>
                             </tfoot>
                         </table>
-                        <div className="mt-4 [&_[data-slot=card-title]]:text-sm">
+                        <div className="mt-2 [&_[data-slot=card-title]]:text-sm">
                             <ProjectCharges
                                 key={JSON.stringify(chargeData)}
                                 projectId={project.id}
@@ -254,10 +281,10 @@ export default function ProjectDupa({
                                 initialSettings={chargeData.settings}
                                 initialMisc={chargeData.miscellaneous}
                                 totals={chargeData.totals}
-                                readOnly={!project.can_edit}
+                                readOnly
                             />
                         </div>
-                        <p className="mt-3 text-xs text-slate-600">
+                        <p className="mt-2 text-xs text-slate-600">
                             Weight is based on the selected estimate's total
                             item amount. ADD and NON-ADD retain their own
                             quantities and unit costs. Project-level charges are

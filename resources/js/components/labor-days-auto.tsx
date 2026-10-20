@@ -16,6 +16,7 @@ import { laborDays, parseLaborDaysFormula } from '@/lib/labor-days-formula';
 type Source = { value: string; label: string };
 export default function LaborDaysAuto({
     persons,
+    resource = 'labor',
     formula,
     sources,
     values,
@@ -23,12 +24,17 @@ export default function LaborDaysAuto({
     onApply,
 }: {
     persons: number | string;
+    resource?: 'labor' | 'equipment';
     formula?: string;
     sources: Source[];
     values: Record<string, number>;
     disabled: boolean;
     onApply: (formula: string) => Promise<boolean>;
 }) {
+    const countField =
+        resource === 'equipment' ? 'no_of_units' : 'no_of_person';
+    const countLabel =
+        resource === 'equipment' ? 'No. of Units' : 'No. of Persons';
     const [open, setOpen] = useState(false);
     const [source, setSource] = useState('');
     const [productivity, setProductivity] = useState('1.5');
@@ -50,12 +56,16 @@ export default function LaborDaysAuto({
                 }
 
                 if (next) {
-                    const current = parseLaborDaysFormula(formula);
+                    const current = parseLaborDaysFormula(formula, countField);
                     setSource(
                         current
                             ? `=${current.source}`
                             : (sources.find((s) =>
-                                  s.value.endsWith('.manual_volume'),
+                                  s.value.endsWith(
+                                      resource === 'equipment'
+                                          ? '.equipment_volume'
+                                          : '.manual_volume',
+                                  ),
                               )?.value ??
                                   sources[0]?.value ??
                                   ''),
@@ -70,19 +80,21 @@ export default function LaborDaysAuto({
                 <Button
                     type="button"
                     variant="ghost"
-                    className="labor-days-trigger absolute top-1/2 left-0.5 z-10 -translate-y-1/2 font-serif text-xs italic"
+                    className="labor-days-trigger shrink-0 font-serif text-xs italic"
                     aria-label={
-                        parseLaborDaysFormula(formula)
+                        parseLaborDaysFormula(formula, countField)
                             ? 'Edit auto-computed days'
-                            : 'Auto-compute labor days'
+                            : `Auto-compute ${resource} days`
                     }
-                    disabled={disabled || !sources.length}
+                    disabled={disabled}
                     title={
                         disabled
                             ? 'Finish the current save or apply backup changes before configuring auto-computed days.'
-                            : parseLaborDaysFormula(formula)
-                              ? 'Auto-computed days: click to edit the volume and productivity formula.'
-                              : 'Auto-compute days from backup volume, productivity, and this row’s No. of Persons.'
+                            : !sources.length
+                              ? 'Open auto-compute days to see the required backup setup.'
+                              : parseLaborDaysFormula(formula, countField)
+                                ? 'Auto-computed days: click to edit the volume and productivity formula.'
+                                : `Auto-compute days from backup volume, productivity, and this row’s ${countLabel}.`
                     }
                 >
                     <span aria-hidden="true">fx</span>
@@ -90,21 +102,38 @@ export default function LaborDaysAuto({
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                    <DialogTitle>Auto-compute labor days</DialogTitle>
+                    <DialogTitle>Auto-compute {resource} days</DialogTitle>
                     <DialogDescription>
-                        Uses the No. of Persons from this labor row. Type a
+                        Uses {countLabel} from this {resource} row. Type a
                         number in the Days cell to return to manual entry.
                     </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">
+                    {!sources.length && (
+                        <p
+                            role="status"
+                            className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950"
+                        >
+                            Add and apply a backup with a volume output using
+                            the Backups button, then return here to calculate
+                            labor days. You can also enter days manually in the
+                            worksheet.
+                        </p>
+                    )}
                     <div className="space-y-1">
                         <Label htmlFor="labor-days-volume">Backup volume</Label>
                         <select
                             id="labor-days-volume"
                             className="h-9 w-full rounded-md border bg-background px-2 text-sm"
                             value={source}
+                            disabled={!sources.length || busy}
                             onChange={(e) => setSource(e.target.value)}
                         >
+                            {!sources.length && (
+                                <option value="">
+                                    No backup volumes available
+                                </option>
+                            )}
                             {sources.map((s) => (
                                 <option key={s.value} value={s.value}>
                                     {s.label}
@@ -114,7 +143,11 @@ export default function LaborDaysAuto({
                     </div>
                     <div className="space-y-1">
                         <Label htmlFor="labor-days-productivity">
-                            Productivity (m³/person/day)
+                            Productivity (
+                            {resource === 'equipment'
+                                ? 'volume/unit/day'
+                                : 'm³/person/day'}
+                            )
                         </Label>
                         <Input
                             id="labor-days-productivity"
@@ -127,7 +160,7 @@ export default function LaborDaysAuto({
                     </div>
                     <div className="rounded-md border bg-muted/30 p-3 text-sm">
                         <p>
-                            No. of Persons: <strong>{persons}</strong>
+                            {countLabel}: <strong>{persons}</strong>
                         </p>
                         <p>
                             ROUNDUP({volume ?? '—'} ÷ {productivity || '—'} ÷{' '}
@@ -137,10 +170,10 @@ export default function LaborDaysAuto({
                             Calculated days: {days ?? '—'}
                         </p>
                     </div>
-                    {days === null && (
+                    {sources.length > 0 && days === null && (
                         <p role="alert" className="text-xs text-destructive">
                             Apply the backup first to load its volume.
-                            Productivity and No. of Persons must be greater than
+                            Productivity and {countLabel} must be greater than
                             zero.
                         </p>
                     )}
@@ -148,14 +181,16 @@ export default function LaborDaysAuto({
                 <DialogFooter>
                     <Button
                         type="button"
-                        disabled={busy || days === null}
+                        disabled={
+                            busy || disabled || !sources.length || days === null
+                        }
                         onClick={async () => {
                             setBusy(true);
 
                             try {
                                 if (
                                     await onApply(
-                                        `=ROUNDUP(${source.slice(1)}/${productivity}/row.no_of_person,0)`,
+                                        `=ROUNDUP(${source.slice(1)}/${productivity}/row.${countField},0)`,
                                     )
                                 ) {
                                     setOpen(false);

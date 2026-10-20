@@ -1,5 +1,5 @@
 import { useForm } from '@inertiajs/react';
-import { Fragment } from 'react';
+import { Fragment, useEffect } from 'react';
 import InputError from '@/components/input-error';
 import MiscellaneousInputs from '@/components/miscellaneous-inputs';
 import type { ProjectFields } from '@/components/project-form';
@@ -37,6 +37,12 @@ export type Total = {
     grand_total: number;
 };
 
+export type ProjectChargeFields = {
+    pol: ProjectFields['pol'];
+    settings: Record<'ADD' | 'NON_ADD', Setting>;
+    miscellaneous: Misc[];
+};
+
 const money = new Intl.NumberFormat('en-PH', {
     style: 'currency',
     currency: 'PHP',
@@ -48,7 +54,9 @@ export default function ProjectCharges({
     initialMisc,
     totals,
     readOnly = false,
+    onChange,
 }: {
+    onChange?: (data: ProjectChargeFields, dirty: boolean) => void;
     projectId: number;
     readOnly?: boolean;
     pol: ProjectFields['pol'];
@@ -61,6 +69,10 @@ export default function ProjectCharges({
         settings: initialSettings,
         miscellaneous: initialMisc,
     });
+    useEffect(() => {
+        onChange?.(form.data, form.isDirty);
+    }, [form.data, form.isDirty, onChange]);
+    const Container = onChange ? 'div' : 'form';
     const setSetting = (
         type: 'ADD' | 'NON_ADD',
         key: keyof Setting,
@@ -223,7 +235,7 @@ export default function ProjectCharges({
     ];
 
     return (
-        <form
+        <Container
             onSubmit={(e) => {
                 e.preventDefault();
                 form.put(`/admin/projects/${projectId}/estimate-settings`, {
@@ -459,7 +471,7 @@ export default function ProjectCharges({
                             </tfoot>
                         </table>
                     </div>
-                    {!readOnly && (
+                    {!readOnly && !onChange && (
                         <div className="flex justify-end border-t border-slate-400 p-2 print:hidden">
                             <Button size="sm" disabled={form.processing}>
                                 {form.processing
@@ -470,6 +482,6 @@ export default function ProjectCharges({
                     )}
                 </section>
             </fieldset>
-        </form>
+        </Container>
     );
 }

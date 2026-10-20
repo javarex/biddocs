@@ -5,7 +5,6 @@ import {
     FileSpreadsheet,
     FileText,
     Import,
-    Pencil,
     Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -55,13 +54,6 @@ export default function ProjectActions({
                     <DropdownMenuItem asChild>
                         <Link href={`/admin/projects/${project.id}/dupa`}>
                             <FileSpreadsheet /> DUPA
-                        </Link>
-                    </DropdownMenuItem>
-                )}
-                {project.can_edit && (
-                    <DropdownMenuItem asChild>
-                        <Link href={`/admin/projects/${project.id}/edit`}>
-                            <Pencil /> Edit project
                         </Link>
                     </DropdownMenuItem>
                 )}

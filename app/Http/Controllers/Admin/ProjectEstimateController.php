@@ -123,6 +123,41 @@ class ProjectEstimateController extends Controller
         return back()->with('success', 'DUPA details updated.');
     }
 
+    public function saveAll(Request $request, ProjectItem $dupa): JsonResponse
+    {
+        Gate::authorize('update', $dupa->section->project);
+        $data = $request->validate([
+            'details' => ['required', 'array'],
+            'estimates' => ['present', 'array:ADD,NON_ADD'],
+            'estimates.ADD' => ['sometimes', 'array'],
+            'estimates.NON_ADD' => ['sometimes', 'array'],
+        ]);
+
+        DB::transaction(function () use ($request, $dupa, $data): void {
+            $detailsRequest = clone $request;
+            $detailsRequest->replace($data['details']);
+            $this->updateDupa($detailsRequest, $dupa);
+
+            foreach ($data['estimates'] as $type => $estimate) {
+                $estimateRequest = clone $request;
+                $estimateRequest->replace($estimate);
+                try {
+                    $this->updateEstimate($estimateRequest, $dupa, $type);
+                } catch (ValidationException $exception) {
+                    $errors = [];
+                    foreach ($exception->errors() as $field => $messages) {
+                        $errors["{$type}.{$field}"] = $messages;
+                    }
+                    throw ValidationException::withMessages($errors);
+                }
+            }
+        });
+
+        return response()->json([
+            'estimates' => $dupa->estimates()->with(['labors', 'equipment', 'items', 'backups'])->get()->keyBy('estimate_type'),
+        ]);
+    }
+
     public function updateEstimate(Request $request, ProjectItem $dupa, string $type): RedirectResponse|JsonResponse
     {
         abort_unless(in_array($type, ['ADD', 'NON_ADD'], true), 404);

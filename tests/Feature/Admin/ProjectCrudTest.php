@@ -68,6 +68,30 @@ class ProjectCrudTest extends TestCase
         $this->assertDatabaseHas('projects', ['id' => $project->id, 'location' => 'Updated location', 'project_date' => '2026-10-19']);
     }
 
+    public function test_project_details_and_charges_save_together(): void
+    {
+        $admin = User::factory()->create(['is_super_admin' => true]);
+        $project = Project::create(['project_name' => 'Original', 'location' => 'Test', 'contract_duration' => 60]);
+        $settings = ['pol_amount' => 0, 'pre_engineering_percentage' => 2, 'supervision_percentage' => 3, 'contingencies_amount' => 100];
+        $payload = [
+            'project_name' => 'Combined update', 'location' => 'Updated', 'contract_duration' => 60,
+            'charges' => [
+                'pol' => 150, 'settings' => ['ADD' => $settings, 'NON_ADD' => $settings],
+                'miscellaneous' => [['estimate_type' => 'ADD', 'description' => 'Permit', 'unit' => 'l.s.', 'amount' => 200, 'multiplier' => 1]],
+            ],
+        ];
+        $this->actingAs($admin)->put(route('admin.projects.update', $project), $payload)->assertSessionHasNoErrors();
+        $this->assertSame('Combined update', $project->fresh()->project_name);
+        $this->assertDatabaseHas('project_estimate_settings', ['project_id' => $project->id, 'estimate_type' => 'ADD', 'pol_amount' => 150, 'supervision_percentage' => 3]);
+        $this->assertDatabaseHas('miscellaneous', ['project_id' => $project->id, 'description' => 'Permit', 'amount' => 200]);
+
+        $payload['project_name'] = 'Must roll back';
+        $payload['charges']['settings']['NON_ADD']['supervision_percentage'] = -1;
+        $this->put(route('admin.projects.update', $project), $payload)->assertSessionHasErrors('charges.settings.NON_ADD.supervision_percentage');
+        $this->assertSame('Combined update', $project->fresh()->project_name);
+        $this->assertDatabaseCount('miscellaneous', 1);
+    }
+
     public function test_project_form_saves_miscellaneous_and_a_single_pol_charge(): void
     {
         $admin = User::factory()->create(['is_super_admin' => true]);

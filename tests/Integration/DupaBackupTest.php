@@ -62,6 +62,49 @@ class DupaBackupTest extends TestCase
             ]];
     }
 
+    public function test_save_all_updates_details_and_both_sides_atomically(): void
+    {
+        $details = $this->dupa->only(['section_id', 'sub_section_id', 'pay_item_no', 'description', 'unit']);
+        $details['sort_order'] = 0;
+        $details['description'] = 'Updated together';
+        $estimates = $this->dupa->estimates()->with(['labors', 'equipment', 'items'])->get()->keyBy('estimate_type')->toArray();
+        $estimates['ADD']['quantity'] = 2;
+        $estimates['NON_ADD']['quantity'] = -1;
+
+        $this->putJson("/admin/dupas/{$this->dupa->id}/save-all", compact('details', 'estimates'))
+            ->assertUnprocessable()->assertJsonValidationErrors('NON_ADD.quantity');
+        $this->assertSame('Structure Excavation', $this->dupa->fresh()->description);
+        $this->assertSame(1.0, $this->estimate->fresh()->quantity);
+
+        $estimates['NON_ADD']['quantity'] = 3;
+        $this->putJson("/admin/dupas/{$this->dupa->id}/save-all", compact('details', 'estimates'))
+            ->assertOk()->assertJsonPath('estimates.ADD.quantity', 2)
+            ->assertJsonPath('estimates.NON_ADD.quantity', 3);
+        $this->assertSame('Updated together', $this->dupa->fresh()->description);
+    }
+
+    public function test_save_all_rolls_back_details_when_estimate_revision_is_stale(): void
+    {
+        $details = $this->dupa->only(['section_id', 'sub_section_id', 'pay_item_no', 'description', 'unit']);
+        $details['sort_order'] = 0;
+        $details['description'] = 'Must not be saved';
+        $estimate = $this->estimate->fresh(['labors', 'equipment', 'items'])->toArray();
+        $estimate['backup_revision'] += 1;
+        $this->putJson("/admin/dupas/{$this->dupa->id}/save-all", [
+            'details' => $details, 'estimates' => ['ADD' => $estimate],
+        ])->assertUnprocessable()->assertJsonValidationErrors('ADD.backup');
+        $this->assertSame('Structure Excavation', $this->dupa->fresh()->description);
+    }
+
+    public function test_save_all_can_save_details_without_estimate_changes(): void
+    {
+        $details = $this->dupa->only(['section_id', 'sub_section_id', 'pay_item_no', 'description', 'unit']);
+        $details['sort_order'] = 0;
+        $details['description'] = 'Details only';
+        $this->putJson("/admin/dupas/{$this->dupa->id}/save-all", ['details' => $details, 'estimates' => []])->assertOk();
+        $this->assertSame('Details only', $this->dupa->fresh()->description);
+    }
+
     private function url(string $action, string $side = 'ADD'): string
     {
         return "/admin/dupas/{$this->dupa->id}/estimates/{$side}/backups/{$action}";
@@ -142,6 +185,35 @@ class DupaBackupTest extends TestCase
         $this->assertNotNull($this->estimate->backup_applied);
         $this->assertSame(0.0, $this->dupa->estimates()->where('estimate_type', 'NON_ADD')->sole()->quantity);
         $this->assertDatabaseCount('dupa_detail_backups', 1);
+    }
+
+    public function test_quantity_and_equipment_days_bind_and_recalculate_from_backup_results(): void
+    {
+        $equipment = $this->estimate->equipment()->sole();
+        $this->document['bindings'] = [
+            ['kind' => 'estimate', 'field' => 'quantity', 'formula' => '=excavation.outputs.total_volume'],
+            ['kind' => 'equipment', 'row_uuid' => $equipment->row_uuid, 'field' => 'no_of_days', 'formula' => '=ROUNDUP(excavation.outputs.equipment_volume/20/row.no_of_units,0)'],
+        ];
+        $this->apply();
+        $values = $this->estimate->backup_applied['values'];
+        $this->assertEqualsWithDelta($values['excavation.outputs.total_volume'], $this->estimate->quantity, 0.0001);
+        $this->assertEquals(ceil($values['excavation.outputs.equipment_volume'] / 20), $this->estimate->equipment()->sole()->no_of_days);
+        $data = $this->estimate->toArray();
+        $data['quantity'] = 999;
+        $data['equipment'][0]['no_of_units'] = 2;
+        $data['equipment'][0]['no_of_days'] = 999;
+        $this->putJson("/admin/dupas/{$this->dupa->id}/estimates/ADD", $data)->assertOk();
+        $this->assertEqualsWithDelta($values['excavation.outputs.total_volume'], $this->estimate->fresh()->quantity, 0.0001);
+        $this->assertEquals(ceil($values['excavation.outputs.equipment_volume'] / 20 / 2), $this->estimate->equipment()->sole()->no_of_days);
+
+        $this->document['bindings'] = [];
+        $this->apply();
+        $data = $this->estimate->toArray();
+        $data['quantity'] = 7;
+        $data['equipment'][0]['no_of_days'] = 4;
+        $this->putJson("/admin/dupas/{$this->dupa->id}/estimates/ADD", $data)->assertOk();
+        $this->assertSame(7.0, $this->estimate->fresh()->quantity);
+        $this->assertSame(4.0, $this->estimate->equipment()->sole()->no_of_days);
     }
 
     public function test_draft_does_not_change_applied_values_and_ordinary_save_uses_applied_formulas(): void
