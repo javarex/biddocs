@@ -4,6 +4,7 @@ import { useState } from 'react';
 import PageHeader from '@/components/page-header';
 import type { Setting, Misc, Total } from '@/components/project-charges';
 import ProjectForm from '@/components/project-form';
+import type { MarkupRateBand } from '@/components/project-markup-rates';
 import type {
     ProjectFields,
     Signatory,
@@ -20,6 +21,7 @@ import {
 } from '@/components/ui/card';
 
 type Props = {
+    markupRateBands: MarkupRateBand[];
     canViewDupa: boolean;
     project: ProjectFields & {
         estimate_settings: Record<'ADD' | 'NON_ADD', Setting>;
@@ -49,6 +51,7 @@ const money = new Intl.NumberFormat('en-PH', {
 });
 
 export default function ProjectEdit({
+    markupRateBands,
     canViewDupa,
     project,
     signatories,
@@ -114,6 +117,7 @@ export default function ProjectEdit({
                 >
                     <ProjectForm
                         worksheet
+                        markupRateBands={markupRateBands}
                         key={JSON.stringify([
                             project.pol,
                             project.miscellaneous,

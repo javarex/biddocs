@@ -13,6 +13,7 @@ type ProjectRow = {
     id: number;
     project_code: string | null;
     project_name: string;
+    allocated_amount: number | null;
     project_description: string | null;
     location: string;
     contract_duration: number;
@@ -87,6 +88,7 @@ export default function ProjectsIndex({
                                 {[
                                     'Project',
                                     'Location',
+                                    'Allocated amount',
                                     'Duration',
                                     'Sections',
                                     'Items',
@@ -130,6 +132,11 @@ export default function ProjectsIndex({
                                     </td>
                                     <td className="max-w-xs px-4 py-4 text-muted-foreground">
                                         {project.location}
+                                    </td>
+                                    <td className="px-4 py-4">
+                                        {project.allocated_amount === null
+                                            ? '—'
+                                            : `₱${Number(project.allocated_amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                                     </td>
                                     <td className="px-4 py-4">
                                         {project.contract_duration} days

@@ -12,6 +12,7 @@ use App\Models\Project;
 use App\Models\ProjectItem;
 use App\Services\Backup\ExcavationTemplate;
 use App\Services\DupaEstimateService;
+use App\Services\ProjectMarkupRateService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -26,7 +27,7 @@ use Inertia\Response;
 
 class ProjectEstimateController extends Controller
 {
-    public function __construct(private readonly DupaEstimateService $estimates) {}
+    public function __construct(private readonly DupaEstimateService $estimates, private readonly ProjectMarkupRateService $markupRates) {}
 
     public function edit(Request $request, ProjectItem $dupa): Response
     {
@@ -66,7 +67,8 @@ class ProjectEstimateController extends Controller
                     DupaBackupTemplate::query()->visibleTo($request->user()->id)->with('creator:id,name')->orderBy('name')->get()->toArray(),
                 ),
                 'embedded' => $request->boolean('embedded'),
-                'project' => $project->only(['id', 'project_code', 'project_name']),
+                'project' => $project->only(['id', 'project_code', 'project_name', 'allocated_amount']),
+                'markupRates' => $this->markupRates->forProject($project),
                 'dupa' => [
                     ...$dupa->only(['id', 'section_id', 'sub_section_id', 'pay_item_no', 'description', 'unit', 'sort_order']),
                     'estimates' => $dupa->estimates->keyBy('estimate_type'),

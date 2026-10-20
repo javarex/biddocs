@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\ProjectMarkupRateService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -73,12 +74,32 @@ class ProjectItem extends Model
 
             $direct = (float) $item->estimated_direct_cost;
             $base = $direct + (float) $item->ocm + (float) $item->profit;
+            $rates = app(ProjectMarkupRateService::class)->forProject($item->section->project);
+            if ($rates !== null) {
+                $ocm = round($direct * $rates['ocm_percentage'] / 100, 2);
+                $profit = round($direct * $rates['profit_percentage'] / 100, 2);
+                $vat = round(($direct + $ocm + $profit) * $rates['vat_percentage'] / 100, 2);
+                $indirect = round($ocm + $profit + $vat, 2);
+                $total = round($direct + $indirect, 2);
+                $quantity = (float) $item->qty;
+                $item->updateQuietly([
+                    'ocm' => $ocm,
+                    'profit' => $profit,
+                    'total_markup_percentage' => $direct > 0 ? ($ocm + $profit) / $direct : 0,
+                    'total_markup_value' => $ocm + $profit,
+                    'vat_five_percent' => $vat,
+                    'total_indirect_cost' => $indirect,
+                    'total_cost' => $total,
+                    'unit_cost_adjusted' => $quantity > 0 ? round($total / $quantity, 2) : 0,
+                ]);
+                $base = $direct + $ocm + $profit;
+            }
             $estimate->fill([
                 'calculation_mode' => 'imported_summary',
                 'quantity' => $item->qty,
-                'ocm_percentage' => $direct > 0 ? ((float) $item->ocm / $direct) * 100 : 0,
-                'profit_percentage' => $direct > 0 ? ((float) $item->profit / $direct) * 100 : 0,
-                'vat_percentage' => $base > 0 ? ((float) $item->vat_five_percent / $base) * 100 : 0,
+                'ocm_percentage' => $rates['ocm_percentage'] ?? ($direct > 0 ? ((float) $item->ocm / $direct) * 100 : 0),
+                'profit_percentage' => $rates['profit_percentage'] ?? ($direct > 0 ? ((float) $item->profit / $direct) * 100 : 0),
+                'vat_percentage' => $rates['vat_percentage'] ?? ($base > 0 ? ((float) $item->vat_five_percent / $base) * 100 : 0),
                 'direct_cost' => $direct,
                 'ocm_amount' => $item->ocm,
                 'profit_amount' => $item->profit,

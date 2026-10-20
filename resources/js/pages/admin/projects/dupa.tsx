@@ -10,6 +10,7 @@ import ProjectDupaActions, {
 } from '@/components/project-dupa-workspace';
 import type { DupaSection } from '@/components/project-dupa-workspace';
 import type { ProjectFields } from '@/components/project-form';
+import type { MarkupRateBand } from '@/components/project-markup-rates';
 import { Button } from '@/components/ui/button';
 import type { Item, Props } from './show';
 
@@ -22,10 +23,12 @@ const value = (n: number | undefined) =>
 
 export default function ProjectDupa({
     project,
+    markupRateBands,
     chargeData,
     dupaSections = [],
     openEstimateId = null,
 }: Pick<Props, 'project'> & {
+    markupRateBands: MarkupRateBand[];
     chargeData: {
         pol: ProjectFields['pol'];
         settings: Record<'ADD' | 'NON_ADD', Setting>;
@@ -139,7 +142,10 @@ export default function ProjectDupa({
                         <div className="border border-slate-400 py-3 text-center text-base font-bold">
                             SUMMARY OF ESTIMATED COST
                         </div>
-                        <ProjectDupaDetails project={project} />
+                        <ProjectDupaDetails
+                            project={project}
+                            markupRateBands={markupRateBands}
+                        />
                         <table className="w-full border-collapse text-xs tabular-nums">
                             <caption className="border border-slate-400 p-2 text-left text-sm font-semibold">
                                 10.) Summary of Estimated Cost

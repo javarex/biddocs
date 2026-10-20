@@ -13,7 +13,7 @@ class Project extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'project_code', 'project_name', 'project_description', 'source_of_funds', 'location',
+        'project_code', 'project_date', 'project_name', 'allocated_amount', 'project_description', 'source_of_funds', 'location',
         'contract_duration', 'created_by', 'type_of_projects', 'category', 'dimension',
         'floor_area', 'implementation_scheme', 'allotment_class', 'contingencies', 'pol',
         'prepared_by', 'checked_by', 'recommending_approval', 'included_in_aip',
@@ -23,6 +23,7 @@ class Project extends Model
     protected function casts(): array
     {
         return [
+            'allocated_amount' => 'float',
             'contingencies' => 'float',
             'pol' => 'float',
             'estimates_updated_at' => 'datetime',

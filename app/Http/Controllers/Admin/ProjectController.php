@@ -11,6 +11,7 @@ use App\Models\SignatoryRoleAssignment;
 use App\Models\SubSection;
 use App\Models\User;
 use App\Services\DupaEstimateService;
+use App\Services\ProjectMarkupRateService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +24,7 @@ use Inertia\Response;
 
 class ProjectController extends Controller
 {
-    public function __construct(private readonly DupaEstimateService $estimates) {}
+    public function __construct(private readonly DupaEstimateService $estimates, private readonly ProjectMarkupRateService $markupRates) {}
 
     public function index(Request $request): Response
     {
@@ -39,7 +40,7 @@ class ProjectController extends Controller
                     ->orWhere('location', 'like', "%{$search}%");
             }))->orderByDesc('id')->paginate(10)->withQueryString()
             ->through(fn (Project $project): array => [
-                ...$project->only(['id', 'project_code', 'project_name', 'project_description', 'location', 'contract_duration']),
+                ...$project->only(['id', 'project_code', 'project_date', 'project_name', 'allocated_amount', 'project_description', 'location', 'contract_duration']),
                 'sections_count' => $project->sections_count,
                 'items_count' => $project->items_count,
                 'can_edit' => Gate::forUser($request->user())->allows('update', $project),
@@ -60,7 +61,10 @@ class ProjectController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        return Inertia::render('admin/projects/create', $this->signatoryFormData(user: $user));
+        return Inertia::render('admin/projects/create', [
+            ...$this->signatoryFormData(user: $user),
+            'markupRateBands' => $this->markupRates->bands(),
+        ]);
     }
 
     public function store(Request $request): RedirectResponse
@@ -139,6 +143,7 @@ class ProjectController extends Controller
         }
 
         return Inertia::render($component, [
+            'markupRateBands' => $this->markupRates->bands(),
             'chargeData' => $chargeData,
             'can_view_dupa' => Gate::allows('projects.dupa.view'),
             ...($component === 'admin/projects/dupa' && Gate::allows('update', $project) ? [
@@ -154,7 +159,7 @@ class ProjectController extends Controller
             ] : []),
             'project' => [
                 ...$project->only([
-                    'id', 'project_code', 'project_name', 'project_description', 'source_of_funds',
+                    'id', 'project_code', 'project_date', 'project_name', 'allocated_amount', 'project_description', 'source_of_funds',
                     'location', 'contract_duration', 'type_of_projects', 'category', 'dimension',
                     'floor_area', 'implementation_scheme', 'allotment_class',
                 ]),
@@ -204,6 +209,7 @@ class ProjectController extends Controller
             ->values();
 
         return Inertia::render('admin/projects/edit', [
+            'markupRateBands' => $this->markupRates->bands(),
             'project' => [
                 ...$project->only($this->fields()),
                 'estimate_settings' => $project->estimateSettings
@@ -255,6 +261,9 @@ class ProjectController extends Controller
             $miscellaneous = $data['miscellaneous'] ?? null;
             unset($data['prepared_by'], $data['miscellaneous']);
             $project->update($data + ['estimates_updated_at' => now()]);
+            if ($project->wasChanged('allocated_amount')) {
+                $this->estimates->refreshProjectMarkup($project);
+            }
             if (array_key_exists('pol', $data) || array_key_exists('contingencies', $data)) {
                 $this->syncProjectCharges($project);
             }
@@ -302,6 +311,8 @@ class ProjectController extends Controller
         return $request->validate([
             'project_code' => ['nullable', 'string', 'max:45'],
             'project_name' => ['required', 'string', 'max:255'],
+            'project_date' => ['nullable', 'date_format:Y-m-d'],
+            'allocated_amount' => ['nullable', 'numeric', 'min:0', 'max:9999999999999999.99'],
             'project_description' => ['nullable', 'string', 'max:10000'],
             'source_of_funds' => ['nullable', 'string', 'max:255'],
             'location' => ['required', 'string', 'max:255'],
@@ -387,7 +398,7 @@ class ProjectController extends Controller
     private function fields(): array
     {
         return [
-            'id', 'project_code', 'project_name', 'project_description', 'source_of_funds', 'location',
+            'id', 'project_code', 'project_date', 'project_name', 'allocated_amount', 'project_description', 'source_of_funds', 'location',
             'contract_duration', 'type_of_projects', 'category', 'dimension', 'floor_area',
             'implementation_scheme', 'allotment_class', 'prepared_by', 'checked_by',
             'pol', 'contingencies',

@@ -17,17 +17,20 @@ use Illuminate\Validation\ValidationException;
 
 class DupaEstimateService
 {
+    public function __construct(private readonly ProjectMarkupRateService $markupRates) {}
+
     public function initialize(ProjectItem $dupa): void
     {
+        $rates = $this->markupRates->forProject($dupa->section->project);
         foreach (['ADD', 'NON_ADD'] as $type) {
             DupaEstimate::query()->firstOrCreate(
                 ['dupa_id' => $dupa->id, 'estimate_type' => $type],
                 [
                     'calculation_mode' => 'resources',
                     'quantity' => $type === 'ADD' ? $dupa->qty : 0,
-                    'ocm_percentage' => 12,
-                    'profit_percentage' => 8,
-                    'vat_percentage' => 5,
+                    'ocm_percentage' => $rates['ocm_percentage'] ?? 12,
+                    'profit_percentage' => $rates['profit_percentage'] ?? 8,
+                    'vat_percentage' => $rates['vat_percentage'] ?? 5,
                 ],
             );
         }
@@ -160,6 +163,40 @@ class DupaEstimateService
 
             return $estimate->fresh(['labors', 'equipment', 'items']);
         });
+    }
+
+    public function refreshProjectMarkup(Project $project): void
+    {
+        $rates = $this->markupRates->forProject($project);
+        if ($rates === null) {
+            return;
+        }
+
+        $estimates = DupaEstimate::query()
+            ->whereHas('dupa.section', fn ($query) => $query->where('project_id', $project->id))
+            ->with('dupa')
+            ->get();
+
+        foreach ($estimates as $estimate) {
+            $direct = (float) $estimate->direct_cost;
+            $ocm = round($direct * $rates['ocm_percentage'] / 100, 2);
+            $profit = round($direct * $rates['profit_percentage'] / 100, 2);
+            $vat = round(($direct + $ocm + $profit) * $rates['vat_percentage'] / 100, 2);
+            $indirect = round($ocm + $profit + $vat, 2);
+            $total = round($direct + $indirect, 2);
+            $quantity = (float) $estimate->quantity;
+
+            $estimate->update($rates + [
+                'ocm_amount' => $ocm,
+                'profit_amount' => $profit,
+                'vat_amount' => $vat,
+                'indirect_cost' => $indirect,
+                'total_cost' => $total,
+                'unit_cost' => $quantity > 0 ? round($total / $quantity, 2) : 0,
+                'backup_revision' => $estimate->backup_revision + 1,
+            ]);
+            $this->syncLegacyTotals($estimate->dupa);
+        }
     }
 
     public function duplicate(ProjectItem $source): ProjectItem
@@ -316,6 +353,9 @@ class DupaEstimateService
             $settings = $project->estimateSettings()->where('estimate_type', $type)->firstOrFail();
             $query = DupaEstimate::query()->where('estimate_type', $type)
                 ->whereHas('dupa.section', fn ($query) => $query->where('project_id', $project->id));
+            $components = (clone $query)->selectRaw('COALESCE(SUM(labor_cost), 0) as labor_cost, COALESCE(SUM(material_cost), 0) as material_cost, COALESCE(SUM(equipment_cost), 0) as equipment_cost, COALESCE(SUM(ocm_amount), 0) as ocm_amount, COALESCE(SUM(profit_amount), 0) as profit_amount, COALESCE(SUM(vat_amount), 0) as vat_amount')->first()->only([
+                'labor_cost', 'material_cost', 'equipment_cost', 'ocm_amount', 'profit_amount', 'vat_amount',
+            ]);
             $direct = round((float) (clone $query)->sum('direct_cost'), 2);
             $dupaTotal = round((float) (clone $query)->sum('total_cost'), 2);
             $miscellaneous = round((float) $project->miscellaneous()->where('estimate_type', $type)
@@ -325,6 +365,8 @@ class DupaEstimateService
             $pol = $type === 'ADD' ? $projectPol : 0.0;
             $charges = round($pol + $settings->contingencies_amount + $preEngineering + $supervision + $miscellaneous, 2);
             $result[$type] = [
+                ...array_map(fn ($amount): float => round((float) $amount, 2), $components),
+                'indirect_cost' => round($dupaTotal - $direct + $charges - $pol, 2),
                 'direct_cost' => $direct,
                 'dupa_total' => $dupaTotal,
                 'pol_amount' => $pol,

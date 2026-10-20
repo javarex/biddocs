@@ -35,6 +35,7 @@ class ProjectCrudTest extends TestCase
         $this->actingAs($admin)->post(route('admin.projects.store'), [
             'project_code' => 'POW-001',
             'project_name' => 'Two Storey School Building',
+            'project_date' => '2026-10-18',
             'project_description' => 'Ten classroom building',
             'source_of_funds' => 'GAA 2026',
             'location' => 'Monkayo, Davao de Oro',
@@ -49,20 +50,22 @@ class ProjectCrudTest extends TestCase
 
         $project = Project::query()->sole();
         $this->assertSame($admin->id, $project->created_by);
+        $this->assertSame('2026-10-18', $project->project_date);
         $this->assertSame($preparer->cats_no, $project->prepared_by);
         $this->assertDatabaseHas('project_estimate_settings', ['project_id' => $project->id, 'estimate_type' => 'ADD']);
         $this->assertDatabaseHas('project_estimate_settings', ['project_id' => $project->id, 'estimate_type' => 'NON_ADD']);
 
         $this->actingAs($admin)->put(route('admin.projects.update', $project), [
             ...$project->only([
-                'project_code', 'project_name', 'project_description', 'source_of_funds', 'location',
+                'project_code', 'project_date', 'project_name', 'project_description', 'source_of_funds', 'location',
                 'contract_duration', 'type_of_projects', 'category', 'dimension', 'floor_area',
                 'implementation_scheme', 'allotment_class',
             ]),
             'location' => 'Updated location',
+            'project_date' => '2026-10-19',
         ])->assertRedirect();
 
-        $this->assertDatabaseHas('projects', ['id' => $project->id, 'location' => 'Updated location']);
+        $this->assertDatabaseHas('projects', ['id' => $project->id, 'location' => 'Updated location', 'project_date' => '2026-10-19']);
     }
 
     public function test_project_form_saves_miscellaneous_and_a_single_pol_charge(): void

@@ -2,6 +2,8 @@ import { useForm } from '@inertiajs/react';
 import type { FormEvent } from 'react';
 import AutoRowTextarea from '@/components/auto-row-textarea';
 import InputError from '@/components/input-error';
+import ProjectMarkupRates from '@/components/project-markup-rates';
+import type { MarkupRateBand } from '@/components/project-markup-rates';
 import { Button } from '@/components/ui/button';
 import type { Props } from '@/pages/admin/projects/show';
 
@@ -9,6 +11,7 @@ type Project = Props['project'];
 type Details = Pick<
     Project,
     | 'project_name'
+    | 'project_date'
     | 'location'
     | 'type_of_projects'
     | 'project_description'
@@ -18,7 +21,10 @@ type Details = Pick<
     | 'source_of_funds'
     | 'allotment_class'
     | 'implementation_scheme'
-> & { contract_duration: number | string };
+> & {
+    contract_duration: number | string;
+    allocated_amount: number | string | null;
+};
 const categories: Record<string, string[]> = {
     Buildings: ['1 Room', '2 Rooms', '3 Rooms', '4 Rooms'],
     Waterworks: ['Level 1', 'Level 2', 'Level 3'],
@@ -27,9 +33,17 @@ const categories: Record<string, string[]> = {
 const control =
     'w-full min-w-0 rounded-none border-0 bg-transparent px-0 py-1 text-sm font-semibold text-slate-950 shadow-none outline-none focus-visible:ring-1 focus-visible:ring-emerald-600 focus-visible:ring-inset';
 
-export default function ProjectDupaDetails({ project }: { project: Project }) {
+export default function ProjectDupaDetails({
+    project,
+    markupRateBands,
+}: {
+    project: Project;
+    markupRateBands: MarkupRateBand[];
+}) {
     const form = useForm<Details>({
         project_name: project.project_name,
+        project_date: project.project_date,
+        allocated_amount: project.allocated_amount,
         location: project.location,
         type_of_projects: project.type_of_projects,
         project_description: project.project_description,
@@ -56,12 +70,14 @@ export default function ProjectDupaDetails({ project }: { project: Project }) {
     };
     const field = (name: keyof Details, label: string, span = '', rows = 0) => (
         <div className={`border border-slate-400 px-2 py-1.5 ${span}`}>
-            <label
-                className="mb-0.5 block text-xs"
-                htmlFor={`dupa-project-${name}`}
-            >
-                {label}
-            </label>
+            <div className="mb-0.5 flex items-center gap-2">
+                <label
+                    className="block text-xs"
+                    htmlFor={`dupa-project-${name}`}
+                >
+                    {label}
+                </label>
+            </div>
             {editable ? (
                 rows > 0 ? (
                     <AutoRowTextarea
@@ -74,8 +90,22 @@ export default function ProjectDupaDetails({ project }: { project: Project }) {
                     <input
                         id={`dupa-project-${name}`}
                         className={control}
-                        type={name === 'contract_duration' ? 'number' : 'text'}
-                        min={name === 'contract_duration' ? 1 : undefined}
+                        type={
+                            name === 'project_date'
+                                ? 'date'
+                                : name === 'contract_duration' ||
+                                    name === 'allocated_amount'
+                                  ? 'number'
+                                  : 'text'
+                        }
+                        min={
+                            name === 'contract_duration'
+                                ? 1
+                                : name === 'allocated_amount'
+                                  ? 0
+                                  : undefined
+                        }
+                        step={name === 'allocated_amount' ? '0.01' : undefined}
                         value={form.data[name] ?? ''}
                         onChange={(e) => form.setData(name, e.target.value)}
                     />
@@ -143,9 +173,10 @@ export default function ProjectDupaDetails({ project }: { project: Project }) {
 
     return (
         <form onSubmit={submit}>
-            <div className="grid grid-cols-[2fr_1fr_1fr] text-sm">
-                {field('project_name', '2.) Name of Project:', '', 2)}
-                {field('location', '3.) Location:', '', 2)}
+            <div className="grid grid-cols-[minmax(10rem,0.75fr)_minmax(0,2fr)_minmax(0,1fr)] text-sm">
+                {field('project_date', '1.) Project Date:')}
+                {field('project_name', '2.) Name of Project:', 'col-span-2', 2)}
+                {field('location', '3.) Location:', 'col-span-3', 2)}
                 {select('type_of_projects', '4.) Type of Projects:', [
                     'Buildings',
                     'Waterworks',
@@ -157,7 +188,8 @@ export default function ProjectDupaDetails({ project }: { project: Project }) {
                     '',
                     3,
                 )}
-                <div className="col-span-2 border border-slate-400 px-2 py-1.5">
+                {field('dimension', '5.1) Dimension:', '', 4)}
+                <div className="border border-slate-400 px-2 py-1.5">
                     <label
                         className="mb-0.5 block text-xs"
                         htmlFor="dupa-project-category"
@@ -217,7 +249,6 @@ export default function ProjectDupaDetails({ project }: { project: Project }) {
                     )}
                     <InputError message={form.errors.category} />
                 </div>
-                {field('dimension', '5.1) Dimension:', '', 4)}
                 {field('source_of_funds', '8.) Source of Funds:', 'col-span-2')}
                 {field('floor_area', '5.2) Floor Area:')}
                 {select(
@@ -233,6 +264,39 @@ export default function ProjectDupaDetails({ project }: { project: Project }) {
                     ['Administration', 'contract'],
                     'col-span-2',
                 )}
+            </div>
+            <div className="flex flex-wrap items-center gap-3 border-x border-b border-slate-400 px-3 py-2 text-sm">
+                <div className="mr-auto font-semibold">
+                    10.) Summary of Estimated Cost
+                </div>
+                <label
+                    htmlFor="dupa-project-allocated-amount"
+                    className="font-medium"
+                >
+                    Allocated Amount (₱):
+                </label>
+                {editable ? (
+                    <input
+                        id="dupa-project-allocated-amount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="h-8 w-44 min-w-0 bg-transparent px-2 font-semibold text-slate-950 outline-none focus-visible:ring-1 focus-visible:ring-emerald-600"
+                        value={form.data.allocated_amount ?? ''}
+                        onChange={(event) =>
+                            form.setData('allocated_amount', event.target.value)
+                        }
+                    />
+                ) : (
+                    <span className="font-semibold">
+                        {project.allocated_amount ?? '—'}
+                    </span>
+                )}
+                <ProjectMarkupRates
+                    allocatedAmount={form.data.allocated_amount}
+                    bands={markupRateBands}
+                />
+                <InputError message={form.errors.allocated_amount} />
             </div>
             {editable && (
                 <div className="flex justify-end gap-2 border-x border-b border-slate-400 p-2 print:hidden">
