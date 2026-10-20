@@ -16,8 +16,12 @@ export default function BackupDaysCell({
     onResult,
     onManual,
     autoCompute,
+    showFormulaButton = false,
+    placeholder = 'Days or =result',
 }: {
     autoCompute?: ComponentProps<typeof LaborDaysAuto>;
+    showFormulaButton?: boolean;
+    placeholder?: string;
     label: string;
     value: string | number;
     formula?: string;
@@ -164,15 +168,35 @@ export default function BackupDaysCell({
     return (
         <div className="backup-days-cell min-w-0">
             <div
-                className={`relative min-w-0 ${autoCompute ? 'backup-days-controls' : ''}`}
+                className={`relative min-w-0 ${autoCompute || showFormulaButton ? 'backup-days-controls' : ''}`}
             >
                 {autoCompute && <LaborDaysAuto {...autoCompute} />}
+                {!autoCompute && showFormulaButton && (
+                    <button
+                        type="button"
+                        className="backup-result-trigger shrink-0 font-serif text-xs italic"
+                        aria-label={`Choose backup formula for ${label}`}
+                        title="Choose a backup result"
+                        disabled={disabled || !canLink}
+                        onClick={() => {
+                            input.current?.focus();
+                            edited.current = true;
+                            setFocused(true);
+                            setDraft('=');
+                            setHighlight(0);
+                            setError('');
+                        }}
+                    >
+                        fx
+                    </button>
+                )}
+
                 <Input
                     ref={input}
                     data-sheet-column="days"
                     aria-label={label}
                     type="text"
-                    className={`text-right tabular-nums ${autoCompute ? 'backup-days-input' : ''}`}
+                    className={`text-right tabular-nums ${autoCompute || showFormulaButton ? 'backup-days-input' : ''}`}
                     role="combobox"
                     aria-autocomplete="list"
                     aria-expanded={searching}
@@ -184,11 +208,11 @@ export default function BackupDaysCell({
                     }
                     aria-invalid={Boolean(error)}
                     aria-describedby={error ? `${listId}-error` : undefined}
-                    placeholder="Days or =result"
+                    placeholder={placeholder}
                     title={
                         formula
                             ? `${selected?.label ?? formula} · type a number to use direct count`
-                            : 'Enter days, or type = to choose a backup result'
+                            : 'Enter a value, or type = to choose a backup result'
                     }
                     disabled={disabled}
                     value={draft ?? value}

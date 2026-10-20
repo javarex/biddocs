@@ -307,9 +307,9 @@ export default function DupaEdit({
         );
     };
     async function switchResult(
-        kind: 'labors' | 'equipment' | 'items',
+        kind: 'estimate' | 'labors' | 'equipment' | 'items',
         field: string,
-        uuid: string,
+        uuid: string | undefined,
         formula: string,
         manualValue?: string,
     ): Promise<boolean> {
@@ -390,11 +390,20 @@ export default function DupaEdit({
                             !(
                                 b.kind === kind &&
                                 b.field === field &&
-                                b.row_uuid === uuid
+                                (kind === 'estimate' || b.row_uuid === uuid)
                             ),
                     ),
                     ...(formula
-                        ? [{ kind, field, row_uuid: uuid, formula }]
+                        ? [
+                              {
+                                  kind,
+                                  field,
+                                  ...(kind === 'estimate'
+                                      ? {}
+                                      : { row_uuid: uuid }),
+                                  formula,
+                              },
+                          ]
                         : []),
                 ],
             };
@@ -453,17 +462,22 @@ export default function DupaEdit({
                 ...current,
                 [side]: estimateDraftKey(savedEstimate),
             }));
-            const next =
-                manualValue !== undefined && kind === 'labors'
-                    ? {
-                          ...savedEstimate,
-                          labors: savedEstimate.labors.map((row) =>
-                              row.row_uuid === uuid
-                                  ? { ...row, no_of_days: manualValue }
-                                  : row,
-                          ),
-                      }
-                    : savedEstimate;
+            let next = savedEstimate;
+
+            if (manualValue !== undefined) {
+                if (kind === 'estimate') {
+                    next = { ...savedEstimate, quantity: manualValue };
+                } else if (kind === 'labors' || kind === 'equipment') {
+                    next = {
+                        ...savedEstimate,
+                        [kind]: savedEstimate[kind].map((row) =>
+                            row.row_uuid === uuid
+                                ? { ...row, no_of_days: manualValue }
+                                : row,
+                        ),
+                    };
+                }
+            }
 
             setEstimates((current) => ({ ...current, [side]: next }));
             notifyParentOfSave();
@@ -967,17 +981,58 @@ export default function DupaEdit({
                         </Button>
                     ))}
                     <div className="dupa-quantity-control">
-                        <NumberField
-                            label="Quantity"
-                            readOnly={bound('estimate', 'quantity')}
-                            value={estimate.quantity}
-                            onChange={(value) =>
-                                setEstimate({
-                                    ...estimate,
-                                    quantity: value,
-                                })
-                            }
-                        />
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium">
+                                Quantity
+                            </span>
+                            <BackupDaysCell
+                                label="DUPA quantity"
+                                placeholder="Quantity or =result"
+                                showFormulaButton
+                                value={estimate.quantity}
+                                formula={
+                                    estimate.backup_applied?.document.bindings.find(
+                                        (b) =>
+                                            b.kind === 'estimate' &&
+                                            b.field === 'quantity',
+                                    )?.formula
+                                }
+                                options={(estimate.backups ?? []).flatMap((b) =>
+                                    b.definition.outputs.map((o) => ({
+                                        value: `=${b.key}.outputs.${o.key}`,
+                                        label: `${b.name} / ${o.label}`,
+                                    })),
+                                )}
+                                disabled={saving}
+                                canLink={!saving && !backupDirty}
+                                onResult={(formula) =>
+                                    switchResult(
+                                        'estimate',
+                                        'quantity',
+                                        undefined,
+                                        formula,
+                                    )
+                                }
+                                onManual={async (value) => {
+                                    if (bound('estimate', 'quantity')) {
+                                        return switchResult(
+                                            'estimate',
+                                            'quantity',
+                                            undefined,
+                                            '',
+                                            value,
+                                        );
+                                    }
+
+                                    setEstimate({
+                                        ...estimate,
+                                        quantity: value,
+                                    });
+
+                                    return true;
+                                }}
+                            />
+                        </div>
                     </div>
                     <span className="dupa-toolbar-context">
                         Editing {side.replace('_', '-')} estimate
@@ -1539,41 +1594,124 @@ export default function DupaEdit({
                                                             }
                                                         />
                                                     </div>
-                                                    <div className="min-w-0 space-y-1">
-                                                        <Input
-                                                            data-sheet-column="days"
-                                                            aria-label={`Days for equipment row ${index + 1}`}
-                                                            type="number"
-                                                            min="0"
-                                                            step="0.0001"
-                                                            title="Days"
-                                                            value={
-                                                                row.no_of_days
-                                                            }
-                                                            readOnly={bound(
+                                                    <BackupDaysCell
+                                                        key={`${side}-${row.row_uuid ?? index}`}
+                                                        label={`Number of days for equipment row ${index + 1}`}
+                                                        autoCompute={{
+                                                            resource:
+                                                                'equipment',
+                                                            persons:
+                                                                row.no_of_units,
+                                                            formula:
+                                                                estimate.backup_applied?.document.bindings.find(
+                                                                    (b) =>
+                                                                        b.kind ===
+                                                                            'equipment' &&
+                                                                        b.field ===
+                                                                            'no_of_days' &&
+                                                                        b.row_uuid ===
+                                                                            row.row_uuid,
+                                                                )?.formula,
+                                                            sources: (
+                                                                estimate.backups ??
+                                                                []
+                                                            ).flatMap((b) =>
+                                                                b.definition.outputs.map(
+                                                                    (o) => ({
+                                                                        value: `=${b.key}.outputs.${o.key}`,
+                                                                        label: `${b.name} / ${o.label}`,
+                                                                    }),
+                                                                ),
+                                                            ),
+                                                            values:
+                                                                estimate
+                                                                    .backup_applied
+                                                                    ?.values ??
+                                                                {},
+                                                            disabled:
+                                                                saving ||
+                                                                backupDirty ||
+                                                                !row.row_uuid,
+                                                            onApply: (
+                                                                formula,
+                                                            ) =>
+                                                                switchResult(
+                                                                    'equipment',
+                                                                    'no_of_days',
+                                                                    row.row_uuid!,
+                                                                    formula,
+                                                                ),
+                                                        }}
+                                                        value={row.no_of_days}
+                                                        formula={
+                                                            estimate.backup_applied?.document.bindings.find(
+                                                                (b) =>
+                                                                    b.kind ===
+                                                                        'equipment' &&
+                                                                    b.field ===
+                                                                        'no_of_days' &&
+                                                                    b.row_uuid ===
+                                                                        row.row_uuid,
+                                                            )?.formula
+                                                        }
+                                                        options={(
+                                                            estimate.backups ??
+                                                            []
+                                                        ).flatMap((b) =>
+                                                            b.definition.outputs.map(
+                                                                (o) => ({
+                                                                    value: `=${b.key}.outputs.${o.key}`,
+                                                                    label: `${b.name} / ${o.label}`,
+                                                                }),
+                                                            ),
+                                                        )}
+                                                        disabled={saving}
+                                                        canLink={
+                                                            !saving &&
+                                                            !backupDirty &&
+                                                            Boolean(
+                                                                row.row_uuid,
+                                                            )
+                                                        }
+                                                        onResult={(formula) =>
+                                                            switchResult(
                                                                 'equipment',
                                                                 'no_of_days',
-                                                                row.row_uuid,
-                                                            )}
-                                                            onChange={(e) =>
-                                                                updateEquipment(
-                                                                    index,
-                                                                    {
-                                                                        ...row,
-                                                                        no_of_days:
-                                                                            e
-                                                                                .target
-                                                                                .value,
-                                                                    },
+                                                                row.row_uuid!,
+                                                                formula,
+                                                            )
+                                                        }
+                                                        onManual={async (
+                                                            value,
+                                                        ) => {
+                                                            if (
+                                                                bound(
+                                                                    'equipment',
+                                                                    'no_of_days',
+                                                                    row.row_uuid,
                                                                 )
+                                                            ) {
+                                                                return switchResult(
+                                                                    'equipment',
+                                                                    'no_of_days',
+                                                                    row.row_uuid!,
+                                                                    '',
+                                                                    value,
+                                                                );
                                                             }
-                                                        />
-                                                        {resultPicker(
-                                                            'equipment',
-                                                            'no_of_days',
-                                                            row.row_uuid,
-                                                        )}
-                                                    </div>
+
+                                                            updateEquipment(
+                                                                index,
+                                                                {
+                                                                    ...row,
+                                                                    no_of_days:
+                                                                        value,
+                                                                },
+                                                            );
+
+                                                            return true;
+                                                        }}
+                                                    />
                                                     <div className="dupa-cell">
                                                         <Input
                                                             data-sheet-column="rental"
@@ -2297,38 +2435,6 @@ function Field({
         </div>
     );
 }
-function NumberField({
-    readOnly = false,
-    label,
-    value,
-    onChange,
-}: {
-    readOnly?: boolean;
-    label: string;
-    value: string | number;
-    onChange: (value: string) => void;
-}) {
-    return (
-        <Field label={label}>
-            <Input
-                type="number"
-                min="0"
-                step="0.0001"
-                value={value}
-                readOnly={readOnly}
-                title={
-                    readOnly
-                        ? ['OCM %', 'Profit %', 'VAT %'].includes(label)
-                            ? 'Determined by the project allocated amount.'
-                            : 'Calculated from a backup. Change its formula binding to use a manual value.'
-                        : undefined
-                }
-                onChange={(e) => onChange(e.target.value)}
-            />
-        </Field>
-    );
-}
-
 async function createCatalogRecord<T>(
     url: string,
     data: Record<string, string | number>,

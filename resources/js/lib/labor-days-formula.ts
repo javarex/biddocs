@@ -1,9 +1,14 @@
-export function parseLaborDaysFormula(formula?: string) {
+export function parseLaborDaysFormula(
+    formula?: string,
+    countField: 'no_of_person' | 'no_of_units' = 'no_of_person',
+) {
     const match = formula?.match(
-        /^=ROUNDUP\(([A-Za-z_][A-Za-z_0-9]*\.outputs\.[A-Za-z_][A-Za-z_0-9]*)\/([0-9]+(?:\.[0-9]*)?|\.[0-9]+)\/row\.no_of_person,0\)$/,
+        /^=ROUNDUP\(([A-Za-z_][A-Za-z_0-9]*\.outputs\.[A-Za-z_][A-Za-z_0-9]*)\/([0-9]+(?:\.[0-9]*)?|\.[0-9]+)\/row\.(no_of_person|no_of_units),0\)$/,
     );
 
-    return match ? { source: match[1], productivity: Number(match[2]) } : null;
+    return match && match[3] === countField
+        ? { source: match[1], productivity: Number(match[2]) }
+        : null;
 }
 export function laborDays(
     volume: number,

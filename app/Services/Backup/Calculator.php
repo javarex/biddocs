@@ -167,9 +167,10 @@ class Calculator
             $resolve($path);
         }
         $bindings = $document['bindings'] ?? [];
-        // Resolve person-count bindings before a days formula reads its own row.
-        usort($bindings, fn ($a, $b) => (int) (($b['kind'] ?? '') === 'labors' && ($b['field'] ?? '') === 'no_of_person')
-            <=> (int) (($a['kind'] ?? '') === 'labors' && ($a['field'] ?? '') === 'no_of_person'));
+        // Resolve row counts before days formulas read their own row.
+        $isCount = fn (array $binding): bool => (($binding['kind'] ?? '') === 'labors' && ($binding['field'] ?? '') === 'no_of_person')
+            || (($binding['kind'] ?? '') === 'equipment' && ($binding['field'] ?? '') === 'no_of_units');
+        usort($bindings, fn ($a, $b) => (int) $isCount($b) <=> (int) $isCount($a));
 
         $used = [];
         $changes = [];
@@ -199,6 +200,19 @@ class Calculator
                     }
 
                     return $persons;
+                }
+
+                if ($ref === 'row.no_of_units' && $kind === 'equipment' && $field === 'no_of_days') {
+                    $index = array_search($uuid, array_column($estimate['equipment'] ?? [], 'row_uuid'), true);
+                    if ($index === false) {
+                        throw new InvalidArgumentException('The equipment row for auto-computed days no longer exists.');
+                    }
+                    $units = (float) $estimate['equipment'][$index]['no_of_units'];
+                    if (! is_finite($units) || $units <= 0) {
+                        throw new InvalidArgumentException('No. of Units must be greater than zero for auto-computed equipment days.');
+                    }
+
+                    return $units;
                 }
 
                 if (! isset($exports[$ref])) {

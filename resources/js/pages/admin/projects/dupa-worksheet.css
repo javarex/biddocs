@@ -316,7 +316,8 @@
 }
 
 /* Reserve a separate click target for the formula action beside the Days input. */
-.dupa-worksheet .backup-days-cell button.labor-days-trigger {
+.dupa-worksheet .backup-days-cell button.labor-days-trigger,
+.dupa-worksheet .backup-days-cell button.backup-result-trigger {
     position: static;
     transform: none;
     width: 28px;
@@ -332,7 +333,7 @@
 .dupa-worksheet .backup-days-cell button.labor-days-trigger:hover {
     background: #eaf2ed;
 }
-.dupa-resource-sheet [data-sheet-row] input.backup-days-input {
+.dupa-worksheet input.backup-days-input {
     flex: 1;
     width: 0;
     min-width: 0;
@@ -647,7 +648,7 @@
     border-radius: 5px;
 }
 .dupa-quantity-control {
-    width: 10rem;
+    width: 14rem;
     padding-left: 10px;
     border-left: 1px solid var(--sheet-line);
 }
@@ -805,6 +806,18 @@
     align-items: stretch;
 }
 .dupa-worksheet-embedded .backup-days-cell button.labor-days-trigger {
+    height: 32px;
+    min-height: 32px;
+}
+
+.dupa-worksheet .backup-days-controls {
+    display: flex;
+    align-items: stretch;
+}
+.dupa-quantity-control .backup-days-cell {
+    flex: 1;
+}
+.dupa-quantity-control button.backup-result-trigger {
     height: 32px;
     min-height: 32px;
 }

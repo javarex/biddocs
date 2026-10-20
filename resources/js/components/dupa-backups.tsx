@@ -11,6 +11,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
     insertFormulaReference,
     removeFormulaReference,
@@ -257,10 +258,12 @@ export default function DupaBackups<
     const [lastExcluded, setLastExcluded] = useState<BackupTemplate | null>(
         null,
     );
-    const [columnKey, setColumnKey] = useState('');
     const [selection, setSelection] = useState<Cell | null>(null);
     const [editing, setEditing] = useState<Cell | null>(null);
     const [formulaTarget, setFormulaTarget] = useState('');
+    const [formulaDialog, setFormulaDialog] = useState(false);
+    const [formulaDraft, setFormulaDraft] = useState('=');
+    const [namedError, setNamedError] = useState('');
     const [resultSelection, setResultSelection] = useState<{
         backup: string;
         key: string;
@@ -310,12 +313,6 @@ export default function DupaBackups<
             })),
         ),
     ];
-    const exports = document.backups.flatMap((b) =>
-        b.definition.outputs.map((v) => ({
-            path: `${b.key}.outputs.${v.key}`,
-            label: `${b.name} / ${v.label}`,
-        })),
-    );
     const unapplied =
         stableJson(
             estimate.backup_applied?.document ?? { backups: [], bindings: [] },
@@ -819,30 +816,462 @@ export default function DupaBackups<
         next?.focus();
         next?.select();
     }
-    function addNamed(type: 'inputs' | 'outputs') {
-        if (!backup) {
+    function insertColumn(after?: string) {
+        if (
+            !backup ||
+            busy ||
+            disabled ||
+            backup.definition.columns.length >= 30
+        ) {
             return;
         }
 
-        const name = key(type === 'inputs' ? 'input' : 'result');
+        let number = 1;
+
+        while (
+            backup.definition.columns.some(
+                (c) => c.key.toLowerCase() === `column${number}`,
+            )
+        ) {
+            number++;
+        }
+
+        const identifier = `column${number}`;
+        const columns = [...backup.definition.columns];
+        const index = after
+            ? columns.findIndex((c) => c.key === after) + 1
+            : columns.length;
+        columns.splice(index, 0, {
+            key: identifier,
+            label: `Column ${number}`,
+        });
         table({
             ...backup.definition,
-            [type]: [
-                ...backup.definition[type],
-                {
-                    key: name,
-                    label: type === 'inputs' ? 'New input' : 'New result',
-                    unit: '',
-                    value:
-                        type === 'outputs' &&
-                        backup.definition.columns.some(
-                            (c) => c.key === 'volume',
-                        )
-                            ? '=SUM(rows.volume)'
-                            : 0,
-                },
+            columns,
+            rows: backup.definition.rows.map((r) => ({
+                ...r,
+                cells: { ...r.cells, [identifier]: 0 },
+            })),
+        });
+        window.requestAnimationFrame(() => {
+            const input = grid.current?.querySelector<HTMLInputElement>(
+                `input[data-column-heading="${identifier}"]`,
+            );
+            input?.focus();
+            input?.select();
+        });
+    }
+
+    function removeColumn(identifier: string) {
+        if (
+            !backup ||
+            busy ||
+            disabled ||
+            backup.definition.columns.length <= 1
+        ) {
+            return;
+        }
+
+        table({
+            ...backup.definition,
+            columns: backup.definition.columns.filter(
+                (c) => c.key !== identifier,
+            ),
+            rows: backup.definition.rows.map((r) => ({
+                ...r,
+                cells: Object.fromEntries(
+                    Object.entries(r.cells).filter(
+                        ([key]) => key !== identifier,
+                    ),
+                ),
+            })),
+        });
+
+        if (selection?.column === identifier) {
+            setSelection(null);
+        }
+
+        if (editing?.column === identifier) {
+            setEditing(null);
+        }
+    }
+
+    function insertRow(after?: string) {
+        if (
+            !backup ||
+            busy ||
+            disabled ||
+            backup.definition.rows.length >= 200
+        ) {
+            return;
+        }
+
+        const row = addRow();
+
+        if (!row) {
+            return;
+        }
+
+        const rows = [...backup.definition.rows];
+        const index = after
+            ? rows.findIndex((r) => r.key === after) + 1
+            : rows.length;
+        rows.splice(index, 0, row);
+        table({ ...backup.definition, rows });
+        setSelection({ row: row.key, column: 'description' });
+        setResultSelection(null);
+        setEditing({ row: row.key, column: 'description' });
+        setReferenceMode(false);
+        window.requestAnimationFrame(() => {
+            const input = grid.current?.querySelector<HTMLInputElement>(
+                `input[data-row="${index}"][data-column="0"]`,
+            );
+            input?.focus();
+            input?.select();
+        });
+    }
+
+    function openFormula(
+        kind: 'inputs' | 'outputs' | 'binding',
+        row?: Table['rows'][number],
+    ) {
+        if (!backup || busy || disabled) {
+            return;
+        }
+
+        if (kind === 'binding') {
+            setFormulaDraft('=');
+            setNamedError('');
+            setFormulaTarget('');
+            setFormulaDialog(true);
+
+            return;
+        }
+
+        const existing = [
+            ...backup.definition.inputs,
+            ...backup.definition.outputs,
+        ];
+        const prefix = kind === 'inputs' ? 'Variable' : 'Formula';
+        let index = 1;
+
+        while (
+            existing.some(
+                (v) =>
+                    v.key.toLowerCase() === `${prefix}${index}`.toLowerCase() ||
+                    v.label.toLowerCase() === `${prefix}${index}`.toLowerCase(),
+            )
+        ) {
+            index++;
+        }
+
+        const identifier = `${prefix}${index}`;
+        const column =
+            backup.definition.columns.find((c) => c.key === 'volume') ??
+            backup.definition.columns[0];
+        const value =
+            kind === 'inputs'
+                ? 0
+                : row && column
+                  ? `=rows.${row.key}.${column.key}`
+                  : backup.definition.columns.some((c) => c.key === 'volume')
+                    ? '=SUM(rows.volume)'
+                    : '=0';
+        table({
+            ...backup.definition,
+            [kind]: [
+                ...backup.definition[kind],
+                { key: identifier, label: identifier, unit: '', value },
             ],
         });
+        setSelection(null);
+        setReferenceMode(false);
+        setResultSelection(
+            kind === 'outputs' ? { backup: backup.key, key: identifier } : null,
+        );
+        window.requestAnimationFrame(() => {
+            const input = grid.current?.querySelector<HTMLInputElement>(
+                `input[data-named-key="${identifier}"]`,
+            );
+            input?.focus();
+            input?.select();
+        });
+    }
+
+    function createFormula() {
+        if (!backup || busy || disabled) {
+            return;
+        }
+
+        const value = formulaDraft.trim();
+
+        if (!value || value === '=') {
+            setNamedError('Enter a number or formula.');
+
+            return;
+        }
+
+        if (formulaTarget === '') {
+            setNamedError('Choose the DUPA field to update.');
+
+            return;
+        }
+
+        bind(formulaTarget, value);
+        setFormulaDialog(false);
+    }
+
+    function renderOutputRow(v: NamedValue, i: number) {
+        if (!backup) {
+            return null;
+        }
+
+        return (
+            <tr
+                key={v.key}
+                className={
+                    selectedResult?.key === v.key
+                        ? 'bg-blue-100 ring-1 ring-blue-500 ring-inset'
+                        : i === 0
+                          ? 'border-t-2 border-emerald-700 bg-emerald-50 font-semibold'
+                          : 'bg-white'
+                }
+            >
+                <th className="border border-slate-300 bg-slate-100 text-xs font-normal text-slate-500">
+                    {backup.definition.rows.length +
+                        3 +
+                        i +
+                        (i > 0 ? backup.definition.inputs.length : 0)}
+                </th>
+                <td
+                    colSpan={Math.max(1, backup.definition.columns.length)}
+                    className="border border-slate-300 px-2 py-1"
+                >
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            className="rounded bg-emerald-100 px-1.5 py-1 font-mono text-xs text-emerald-800"
+                            data-backup-reference={`outputs.${v.key}`}
+                            aria-label={`Edit formula for ${v.label}`}
+                            aria-pressed={selectedResult?.key === v.key}
+                            title="Click to view and edit in the formula bar above"
+                            onClick={() => selectResult(v.key)}
+                        >
+                            fx
+                        </button>
+                        <input
+                            aria-label={`Name for formula ${v.key}`}
+                            data-named-key={v.key}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                    event.preventDefault();
+                                    selectResult(v.key);
+                                }
+                            }}
+                            className="h-7 min-w-0 flex-1 border-0 bg-transparent text-xs font-semibold outline-none focus:ring-1 focus:ring-emerald-600"
+                            value={v.label}
+                            onChange={(e) =>
+                                table({
+                                    ...backup.definition,
+                                    outputs: backup.definition.outputs.map(
+                                        (n, j) =>
+                                            j === i
+                                                ? {
+                                                      ...n,
+                                                      label: e.target.value,
+                                                  }
+                                                : n,
+                                    ),
+                                })
+                            }
+                        />
+                        <input
+                            aria-label={`Unit for formula ${v.key}`}
+                            placeholder="Unit"
+                            className="h-7 w-16 border-0 bg-transparent text-xs outline-none focus:ring-1 focus:ring-emerald-600"
+                            value={v.unit}
+                            onChange={(e) =>
+                                table({
+                                    ...backup.definition,
+                                    outputs: backup.definition.outputs.map(
+                                        (n, j) =>
+                                            j === i
+                                                ? {
+                                                      ...n,
+                                                      unit: e.target.value,
+                                                  }
+                                                : n,
+                                    ),
+                                })
+                            }
+                        />
+                    </div>
+                </td>
+                <td className="border border-slate-300 px-1.5 py-1 text-right font-semibold tabular-nums">
+                    <button
+                        type="button"
+                        className="w-full text-right hover:text-emerald-800"
+                        data-backup-reference={`outputs.${v.key}`}
+                        aria-label={`Edit result ${v.label}`}
+                        title={String(v.value)}
+                        onClick={() => selectResult(v.key)}
+                    >
+                        {displayNumber(
+                            preview?.values[`${backup.key}.outputs.${v.key}`],
+                        )}
+                    </button>
+                </td>
+                <td className="border border-slate-300 text-center">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 text-slate-500 hover:text-red-700"
+                        aria-label={`Remove formula ${v.label}`}
+                        disabled={busy || disabled}
+                        onClick={() =>
+                            table({
+                                ...backup.definition,
+                                outputs: backup.definition.outputs.filter(
+                                    (_, j) => j !== i,
+                                ),
+                            })
+                        }
+                    >
+                        <Trash2 className="size-3.5" />
+                    </Button>
+                </td>
+            </tr>
+        );
+    }
+    function renderInputRows() {
+        if (!backup) {
+            return null;
+        }
+
+        return (
+            <>
+                {backup.definition.inputs.map((v, i) => (
+                    <tr key={`input-${v.key}`} className="bg-white">
+                        <th className="border border-slate-300 bg-slate-100 text-xs font-normal text-slate-500">
+                            {backup.definition.rows.length +
+                                Math.min(1, backup.definition.outputs.length) +
+                                3 +
+                                i}
+                        </th>
+                        <td
+                            colSpan={Math.max(
+                                1,
+                                backup.definition.columns.length,
+                            )}
+                            className="border border-slate-300 px-2 py-1"
+                        >
+                            <div className="flex items-center gap-2">
+                                <span className="rounded bg-slate-100 px-1.5 py-1 text-[10px] text-slate-600">
+                                    Variable
+                                </span>
+                                <input
+                                    aria-label={`Name for variable ${v.key}`}
+                                    data-named-key={v.key}
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter') {
+                                            event.preventDefault();
+                                            grid.current
+                                                ?.querySelector<HTMLInputElement>(
+                                                    `input[data-named-value="${v.key}"]`,
+                                                )
+                                                ?.focus();
+                                        }
+                                    }}
+                                    title={`inputs.${v.key}`}
+                                    className="h-7 min-w-0 flex-1 border-0 bg-transparent text-xs outline-none focus:ring-1 focus:ring-emerald-600"
+                                    value={v.label}
+                                    onChange={(e) =>
+                                        table({
+                                            ...backup.definition,
+                                            inputs: backup.definition.inputs.map(
+                                                (n, j) =>
+                                                    j === i
+                                                        ? {
+                                                              ...n,
+                                                              label: e.target
+                                                                  .value,
+                                                          }
+                                                        : n,
+                                            ),
+                                        })
+                                    }
+                                />
+                                <input
+                                    aria-label={`Unit for variable ${v.key}`}
+                                    placeholder="Unit"
+                                    className="h-7 w-16 border-0 bg-transparent text-xs outline-none focus:ring-1 focus:ring-emerald-600"
+                                    value={v.unit}
+                                    onChange={(e) =>
+                                        table({
+                                            ...backup.definition,
+                                            inputs: backup.definition.inputs.map(
+                                                (n, j) =>
+                                                    j === i
+                                                        ? {
+                                                              ...n,
+                                                              unit: e.target
+                                                                  .value,
+                                                          }
+                                                        : n,
+                                            ),
+                                        })
+                                    }
+                                />
+                            </div>
+                        </td>
+                        <td className="border border-slate-300 px-1.5 py-1">
+                            <input
+                                aria-label={`Value or formula for ${v.label}`}
+                                data-named-value={v.key}
+                                data-backup-reference={`inputs.${v.key}`}
+                                className="h-7 w-full min-w-0 border-0 bg-transparent text-right font-mono text-xs outline-none focus:ring-1 focus:ring-emerald-600"
+                                value={v.value}
+                                onChange={(e) =>
+                                    table({
+                                        ...backup.definition,
+                                        inputs: backup.definition.inputs.map(
+                                            (n, j) =>
+                                                j === i
+                                                    ? {
+                                                          ...n,
+                                                          value: e.target.value,
+                                                      }
+                                                    : n,
+                                        ),
+                                    })
+                                }
+                            />
+                        </td>
+                        <td className="border border-slate-300 text-center">
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 text-slate-500 hover:text-red-700"
+                                aria-label={`Remove variable ${v.label}`}
+                                disabled={busy || disabled}
+                                onClick={() =>
+                                    table({
+                                        ...backup.definition,
+                                        inputs: backup.definition.inputs.filter(
+                                            (_, j) => j !== i,
+                                        ),
+                                    })
+                                }
+                            >
+                                <Trash2 className="size-3.5" />
+                            </Button>
+                        </td>
+                    </tr>
+                ))}
+            </>
+        );
     }
 
     return (
@@ -986,11 +1415,118 @@ export default function DupaBackups<
                     </span>
                 </span>
             </div>
+            <Dialog open={formulaDialog} onOpenChange={setFormulaDialog}>
+                <DialogContent className="bg-white text-slate-950 sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Link DUPA field</DialogTitle>
+                        <DialogDescription>
+                            Choose a DUPA field and the formula that supplies
+                            its value.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <form
+                        className="space-y-4"
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            createFormula();
+                        }}
+                    >
+                        <div className="space-y-1">
+                            <Label htmlFor="backup-formula-target">
+                                DUPA field
+                            </Label>
+                            <select
+                                id="backup-formula-target"
+                                className={`${selectClass} w-full`}
+                                value={formulaTarget}
+                                onChange={(e) =>
+                                    setFormulaTarget(e.target.value)
+                                }
+                                required
+                            >
+                                <option value="">Choose DUPA field…</option>
+                                {targets.map((t, i) => (
+                                    <option key={i} value={i}>
+                                        {t.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="space-y-1">
+                            <Label htmlFor="backup-formula-value">
+                                Formula
+                            </Label>
+                            <Input
+                                id="backup-formula-value"
+                                required
+                                className="font-mono"
+                                placeholder="=SUM(rows.volume)"
+                                value={formulaDraft}
+                                onChange={(e) =>
+                                    setFormulaDraft(e.target.value)
+                                }
+                            />
+                        </div>
+                        {namedError && (
+                            <p role="alert" className="text-sm text-red-700">
+                                {namedError}
+                            </p>
+                        )}
+                        <DialogFooter>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setFormulaDialog(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="submit"
+                                disabled={busy || disabled || !backup}
+                            >
+                                Link field
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
             {backup && (
-                <div className="z-20 shrink-0 border-b border-slate-300 bg-white px-3 py-2 shadow-sm">
-                    <div className="flex items-center gap-2 text-sm">
+                <div className="z-20 shrink-0 border-b border-slate-300 bg-white px-2 py-1.5 shadow-sm">
+                    {backup.definition.rows.length === 0 && (
+                        <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                            {backup.definition.rows.length === 0 && (
+                                <>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className={`${buttonClass} h-7 shrink-0 px-2 text-[11px]`}
+                                        disabled={
+                                            busy ||
+                                            disabled ||
+                                            backup.definition.rows.length >= 200
+                                        }
+                                        onClick={() => insertRow()}
+                                    >
+                                        <Plus /> Add row
+                                    </Button>
+
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        className="bg-emerald-700 text-white hover:bg-emerald-800"
+                                        disabled={busy || disabled}
+                                        onClick={() => openFormula('outputs')}
+                                    >
+                                        <Plus /> Add formula
+                                    </Button>
+                                </>
+                            )}
+                        </div>
+                    )}
+                    <div className="flex items-center gap-1.5 text-xs">
                         <span
-                            className="max-w-64 min-w-24 truncate rounded border border-slate-300 bg-slate-50 px-2 py-1.5 text-xs"
+                            className="max-w-36 min-w-16 truncate rounded border border-slate-300 bg-slate-50 px-1.5 py-1 text-[11px]"
                             title={selectedAddress}
                         >
                             {selectedAddress}
@@ -1001,7 +1537,7 @@ export default function DupaBackups<
                         <input
                             ref={formulaInput}
                             aria-label="Formula bar"
-                            className="h-8 min-w-0 flex-1 rounded border border-emerald-600 bg-white px-2 font-mono text-xs text-slate-950 outline-none focus:ring-1 focus:ring-emerald-600"
+                            className="h-7 min-w-0 flex-1 rounded border border-emerald-600 bg-white px-2 font-mono text-xs text-slate-950 outline-none focus:ring-1 focus:ring-emerald-600"
                             disabled={
                                 busy ||
                                 disabled ||
@@ -1041,7 +1577,7 @@ export default function DupaBackups<
                                 type="button"
                                 size="sm"
                                 variant={referenceMode ? 'default' : 'outline'}
-                                className={buttonClass}
+                                className={`${buttonClass} h-7 shrink-0 px-2 text-[11px]`}
                                 disabled={busy || disabled}
                                 onClick={() => {
                                     if (
@@ -1060,55 +1596,71 @@ export default function DupaBackups<
                                 {referenceMode ? 'Done picking' : 'Pick cells'}
                             </Button>
                         )}
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className={`${buttonClass} h-7 shrink-0 px-2 text-[11px]`}
+                            disabled={busy || disabled}
+                            onClick={() => openFormula('binding')}
+                        >
+                            Link field
+                        </Button>
                     </div>
-                    <p className="mt-1 text-xs text-slate-600">
-                        {referenceMode && selectedResult
-                            ? 'Click numeric cells, inputs, or other results to insert references at the cursor. Type operators (+ − × /) in the formula bar. Enter finishes picking.'
-                            : selectedResult
-                              ? 'Edit this result here. Type = or choose Pick cells to build a formula from worksheet cells.'
-                              : 'Select a worksheet cell or click a result below to view and edit its formula.'}
-                    </p>
+                    {referenceMode && selectedResult && (
+                        <p className="mt-1 text-[11px] text-slate-500">
+                            Click cells to insert references · Type + − * / ·
+                            Enter to finish.
+                        </p>
+                    )}
                     {resultReferences.length > 0 && (
-                        <div className="mt-1 flex flex-wrap items-center gap-1 text-xs">
-                            <span className="text-slate-600">Sources:</span>
-                            {resultReferences.map((reference) => (
-                                <span
-                                    key={reference}
-                                    className="inline-flex items-center overflow-hidden rounded border border-blue-200 bg-blue-50 font-mono text-blue-800"
-                                >
-                                    <button
-                                        type="button"
-                                        className="px-1.5 py-0.5 hover:bg-blue-100"
-                                        title="Jump to source cell"
-                                        onClick={() =>
-                                            jumpToReference(reference)
-                                        }
+                        <details className="mt-1 text-[11px] text-slate-600">
+                            <summary className="w-fit cursor-pointer">
+                                Sources ({resultReferences.length})
+                            </summary>
+                            <div className="mt-1 flex max-h-20 flex-wrap items-center gap-1 overflow-y-auto">
+                                {resultReferences.map((reference) => (
+                                    <span
+                                        key={reference}
+                                        className="inline-flex items-center overflow-hidden rounded border border-blue-200 bg-blue-50 font-mono text-blue-800"
                                     >
-                                        {reference}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="border-l border-blue-200 px-1.5 py-0.5 font-sans font-semibold hover:bg-red-100 hover:text-red-800"
-                                        aria-label={`Remove ${reference} from formula`}
-                                        title="Remove this source from the formula"
-                                        disabled={busy || disabled}
-                                        onClick={() => {
-                                            const next = removeFormulaReference(
-                                                String(selectedValue ?? ''),
-                                                reference,
-                                            );
-                                            formulaValue(next);
-                                            formulaCaret.current = {
-                                                start: next.length,
-                                                end: next.length,
-                                            };
-                                        }}
-                                    >
-                                        ×
-                                    </button>
-                                </span>
-                            ))}
-                        </div>
+                                        <button
+                                            type="button"
+                                            className="px-1.5 py-0.5 hover:bg-blue-100"
+                                            title="Jump to source cell"
+                                            onClick={() =>
+                                                jumpToReference(reference)
+                                            }
+                                        >
+                                            {reference}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="border-l border-blue-200 px-1.5 py-0.5 font-sans font-semibold hover:bg-red-100 hover:text-red-800"
+                                            aria-label={`Remove ${reference} from formula`}
+                                            title="Remove this source from the formula"
+                                            disabled={busy || disabled}
+                                            onClick={() => {
+                                                const next =
+                                                    removeFormulaReference(
+                                                        String(
+                                                            selectedValue ?? '',
+                                                        ),
+                                                        reference,
+                                                    );
+                                                formulaValue(next);
+                                                formulaCaret.current = {
+                                                    start: next.length,
+                                                    end: next.length,
+                                                };
+                                            }}
+                                        >
+                                            ×
+                                        </button>
+                                    </span>
+                                ))}
+                            </div>
+                        </details>
                     )}
                 </div>
             )}
@@ -1189,68 +1741,6 @@ export default function DupaBackups<
                                 {deleteBlocked(backup.key) &&
                                     ' · Delete locked: switch linked fields and apply first; remove references from other backups.'}
                             </div>
-                            {backup.definition.inputs.length > 0 && (
-                                <details className="border-b border-slate-300 bg-amber-50/40">
-                                    <summary className="cursor-pointer px-2 py-1 text-xs font-medium">
-                                        Inputs &amp; productivity (
-                                        {backup.definition.inputs.length})
-                                    </summary>
-                                    <div className="grid gap-x-3 gap-y-1 border-b border-slate-300 bg-amber-50/40 px-2 py-2 sm:grid-cols-2 lg:grid-cols-3">
-                                        {backup.definition.inputs.map(
-                                            (v, i) => (
-                                                <label
-                                                    key={i}
-                                                    className="flex items-center justify-between gap-2 text-xs"
-                                                >
-                                                    <span>
-                                                        {typeof v.value ===
-                                                            'string' &&
-                                                            v.value.startsWith(
-                                                                '=',
-                                                            ) && (
-                                                                <span
-                                                                    className="mr-2 inline-flex rounded bg-emerald-100 px-1 font-mono text-xs font-semibold text-emerald-800"
-                                                                    title={
-                                                                        v.value
-                                                                    }
-                                                                    aria-label={`Formula for ${v.label}: ${v.value}`}
-                                                                >
-                                                                    fx
-                                                                </span>
-                                                            )}
-                                                        {v.label}
-                                                        {v.unit
-                                                            ? ` (${v.unit})`
-                                                            : ''}
-                                                    </span>
-                                                    <Input
-                                                        aria-label={v.label}
-                                                        data-backup-reference={`inputs.${v.key}`}
-                                                        className="h-7 w-24 border-slate-300 bg-amber-50 text-right text-slate-950"
-                                                        value={v.value}
-                                                        onChange={(e) =>
-                                                            table({
-                                                                ...backup.definition,
-                                                                inputs: backup.definition.inputs.map(
-                                                                    (n, j) =>
-                                                                        j === i
-                                                                            ? {
-                                                                                  ...n,
-                                                                                  value: e
-                                                                                      .target
-                                                                                      .value,
-                                                                              }
-                                                                            : n,
-                                                                ),
-                                                            })
-                                                        }
-                                                    />
-                                                </label>
-                                            ),
-                                        )}
-                                    </div>
-                                </details>
-                            )}
                             <div className="overflow-x-auto">
                                 <table
                                     ref={grid}
@@ -1258,7 +1748,7 @@ export default function DupaBackups<
                                     style={{
                                         minWidth: Math.max(
                                             640,
-                                            240 +
+                                            304 +
                                                 backup.definition.columns
                                                     .length *
                                                     88,
@@ -1274,7 +1764,7 @@ export default function DupaBackups<
                                                 className="min-w-20"
                                             />
                                         ))}
-                                        <col className="w-8" />
+                                        <col className="w-24" />
                                     </colgroup>
                                     <thead>
                                         <tr className="bg-slate-100 text-center text-xs text-slate-600">
@@ -1288,11 +1778,76 @@ export default function DupaBackups<
                                                         key={c.key}
                                                         className="border border-slate-300 font-normal"
                                                     >
-                                                        {columnLetter(i + 1)}
+                                                        <div className="flex items-center justify-between gap-0.5 px-1 py-0.5">
+                                                            <span>
+                                                                {columnLetter(
+                                                                    i + 1,
+                                                                )}
+                                                            </span>
+                                                            <div className="flex items-center gap-0.5">
+                                                                <button
+                                                                    type="button"
+                                                                    className="flex size-5 items-center justify-center rounded text-emerald-700 hover:bg-emerald-100 disabled:opacity-40"
+                                                                    aria-label={`Insert column after ${c.label}`}
+                                                                    title="Add column to the right"
+                                                                    disabled={
+                                                                        busy ||
+                                                                        disabled ||
+                                                                        backup
+                                                                            .definition
+                                                                            .columns
+                                                                            .length >=
+                                                                            30
+                                                                    }
+                                                                    onClick={() =>
+                                                                        insertColumn(
+                                                                            c.key,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    <Plus className="size-3" />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="flex size-5 items-center justify-center rounded text-slate-400 hover:bg-red-50 hover:text-red-700"
+                                                                    aria-label={`Remove column ${c.label}`}
+                                                                    title={`Remove ${c.label}`}
+                                                                    disabled={
+                                                                        busy ||
+                                                                        disabled
+                                                                    }
+                                                                    onClick={() =>
+                                                                        removeColumn(
+                                                                            c.key,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    <Trash2 className="size-3" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
                                                     </th>
                                                 ),
                                             )}
-                                            <th className="border border-slate-300" />
+                                            <th className="border border-slate-300">
+                                                <button
+                                                    type="button"
+                                                    className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-40"
+                                                    disabled={
+                                                        busy ||
+                                                        disabled ||
+                                                        backup.definition
+                                                            .columns.length >=
+                                                            30
+                                                    }
+                                                    onClick={() =>
+                                                        insertColumn()
+                                                    }
+                                                >
+                                                    <Plus className="size-3" />{' '}
+                                                    Column
+                                                </button>
+                                            </th>
                                         </tr>
                                         <tr className="bg-slate-50 text-center">
                                             <th className="border border-slate-300 text-xs font-normal text-slate-500">
@@ -1307,11 +1862,52 @@ export default function DupaBackups<
                                                         key={c.key}
                                                         className="border border-slate-300 px-1.5 py-1 font-semibold"
                                                     >
-                                                        {c.label}
+                                                        <input
+                                                            aria-label={`Column ${c.key} heading`}
+                                                            data-column-heading={
+                                                                c.key
+                                                            }
+                                                            title={`Click to rename · Formula key: ${c.key}`}
+                                                            className="h-7 w-full min-w-0 border-0 bg-transparent px-1 text-center text-xs font-semibold text-slate-950 outline-none focus:bg-white focus:ring-1 focus:ring-emerald-600"
+                                                            value={c.label}
+                                                            onChange={(e) =>
+                                                                table({
+                                                                    ...backup.definition,
+                                                                    columns:
+                                                                        backup.definition.columns.map(
+                                                                            (
+                                                                                column,
+                                                                            ) =>
+                                                                                column.key ===
+                                                                                c.key
+                                                                                    ? {
+                                                                                          ...column,
+                                                                                          label: e
+                                                                                              .target
+                                                                                              .value,
+                                                                                      }
+                                                                                    : column,
+                                                                        ),
+                                                                })
+                                                            }
+                                                            onKeyDown={(
+                                                                event,
+                                                            ) => {
+                                                                if (
+                                                                    event.key ===
+                                                                    'Enter'
+                                                                ) {
+                                                                    event.preventDefault();
+                                                                    event.currentTarget.blur();
+                                                                }
+                                                            }}
+                                                        />
                                                     </th>
                                                 ),
                                             )}
-                                            <th className="border border-slate-300" />
+                                            <th className="border border-slate-300 text-xs font-medium">
+                                                Actions
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1479,568 +2075,136 @@ export default function DupaBackups<
                                                     },
                                                 )}
                                                 <td className="border border-slate-300 text-center">
-                                                    <button
-                                                        type="button"
-                                                        tabIndex={-1}
-                                                        aria-label={`Remove ${r.label}`}
-                                                        className="p-1 text-slate-400 hover:text-red-700"
-                                                        onClick={() =>
-                                                            table({
-                                                                ...backup.definition,
-                                                                rows: backup.definition.rows.filter(
-                                                                    (_, i) =>
-                                                                        i !==
-                                                                        ri,
-                                                                ),
-                                                            })
-                                                        }
-                                                    >
-                                                        <Trash2 className="size-3.5" />
-                                                    </button>
+                                                    <div className="flex items-center justify-center gap-0.5 px-1">
+                                                        <button
+                                                            type="button"
+                                                            className="flex size-7 items-center justify-center rounded text-emerald-800 hover:bg-emerald-100 disabled:opacity-40"
+                                                            disabled={
+                                                                busy ||
+                                                                disabled ||
+                                                                backup
+                                                                    .definition
+                                                                    .rows
+                                                                    .length >=
+                                                                    200
+                                                            }
+                                                            aria-label={`Insert row below ${r.label}`}
+                                                            title="Add row below"
+                                                            onClick={() =>
+                                                                insertRow(r.key)
+                                                            }
+                                                        >
+                                                            <Plus className="size-3.5" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="size-7 rounded font-serif text-xs text-emerald-800 italic hover:bg-emerald-100"
+                                                            disabled={
+                                                                busy || disabled
+                                                            }
+                                                            aria-label={`Add formula from ${r.label}`}
+                                                            title="Add formula from this row"
+                                                            onClick={() =>
+                                                                openFormula(
+                                                                    'outputs',
+                                                                    r,
+                                                                )
+                                                            }
+                                                        >
+                                                            fx
+                                                        </button>
+
+                                                        <button
+                                                            type="button"
+                                                            tabIndex={-1}
+                                                            aria-label={`Remove ${r.label}`}
+                                                            className="flex size-7 items-center justify-center rounded text-slate-400 hover:bg-red-50 hover:text-red-700"
+                                                            onClick={() =>
+                                                                table({
+                                                                    ...backup.definition,
+                                                                    rows: backup.definition.rows.filter(
+                                                                        (
+                                                                            _,
+                                                                            i,
+                                                                        ) =>
+                                                                            i !==
+                                                                            ri,
+                                                                    ),
+                                                                })
+                                                            }
+                                                        >
+                                                            <Trash2 className="size-3.5" />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
                                     </tbody>
                                     <tfoot>
-                                        {backup.definition.outputs.map(
-                                            (v, i) => (
-                                                <tr
-                                                    key={v.key}
-                                                    className={
-                                                        selectedResult?.key ===
-                                                        v.key
-                                                            ? 'bg-blue-100 ring-1 ring-blue-500 ring-inset'
-                                                            : i === 0
-                                                              ? 'border-t-2 border-emerald-700 bg-emerald-50 font-semibold'
-                                                              : 'bg-white'
-                                                    }
-                                                >
-                                                    <th className="border border-slate-300 bg-slate-100 text-xs font-normal text-slate-500">
-                                                        {backup.definition.rows
-                                                            .length +
-                                                            3 +
-                                                            i}
-                                                    </th>
-                                                    <td
-                                                        colSpan={Math.max(
-                                                            1,
-                                                            backup.definition
-                                                                .columns.length,
-                                                        )}
-                                                        className="border border-slate-300 px-2 py-1"
+                                        {backup.definition.outputs
+                                            .slice(0, 1)
+                                            .map(renderOutputRow)}
+                                        {renderInputRows()}
+                                        {backup.definition.outputs
+                                            .slice(1)
+                                            .map((v, i) =>
+                                                renderOutputRow(v, i + 1),
+                                            )}
+                                        <tr>
+                                            <td
+                                                colSpan={
+                                                    backup.definition.columns
+                                                        .length + 3
+                                                }
+                                                className="border border-slate-300 bg-emerald-50/50 px-2 py-1"
+                                            >
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className={`${buttonClass} h-6 gap-1 rounded px-2 text-[11px] leading-none [&_svg]:size-3`}
+                                                        disabled={
+                                                            busy || disabled
+                                                        }
+                                                        onClick={() =>
+                                                            openFormula(
+                                                                'inputs',
+                                                            )
+                                                        }
                                                     >
-                                                        <button
-                                                            type="button"
-                                                            className="text-left hover:text-emerald-800 hover:underline"
-                                                            data-backup-reference={`outputs.${v.key}`}
-                                                            aria-label={`Edit formula for ${v.label}`}
-                                                            onClick={() =>
-                                                                selectResult(
-                                                                    v.key,
-                                                                )
-                                                            }
-                                                        >
-                                                            <span className="mr-2 rounded bg-emerald-100 px-1 font-mono text-xs text-emerald-800">
-                                                                fx
-                                                            </span>
-                                                            {v.label}
-                                                        </button>
-                                                        {v.unit
-                                                            ? ` (${v.unit})`
-                                                            : ''}
-                                                    </td>
-                                                    <td className="border border-slate-300 px-1.5 py-1 text-right font-semibold tabular-nums">
-                                                        <button
-                                                            type="button"
-                                                            className="w-full text-right hover:text-emerald-800"
-                                                            data-backup-reference={`outputs.${v.key}`}
-                                                            aria-label={`Edit result ${v.label}`}
-                                                            title={String(
-                                                                v.value,
-                                                            )}
-                                                            onClick={() =>
-                                                                selectResult(
-                                                                    v.key,
-                                                                )
-                                                            }
-                                                        >
-                                                            {displayNumber(
-                                                                preview?.values[
-                                                                    `${backup.key}.outputs.${v.key}`
-                                                                ],
-                                                            )}
-                                                        </button>
-                                                    </td>
-                                                    <td className="border border-slate-300" />
-                                                </tr>
-                                            ),
-                                        )}
+                                                        <Plus /> Add variable
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className={`${buttonClass} h-6 gap-1 rounded px-2 text-[11px] leading-none [&_svg]:size-3`}
+                                                        disabled={
+                                                            busy || disabled
+                                                        }
+                                                        onClick={() =>
+                                                            openFormula(
+                                                                'outputs',
+                                                            )
+                                                        }
+                                                    >
+                                                        <Plus /> Add formula
+                                                    </Button>
+                                                    <span className="ml-1 text-[11px] text-slate-500">
+                                                        Set up variables and
+                                                        formulas here, below
+                                                        Total volume.
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
                                     </tfoot>
                                 </table>
                             </div>
-                            <div className="border-t border-slate-300 px-2 py-1">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className={buttonClass}
-                                    disabled={
-                                        backup.definition.rows.length >= 200
-                                    }
-                                    onClick={() => {
-                                        const row = addRow();
-
-                                        if (row) {
-                                            table({
-                                                ...backup.definition,
-                                                rows: [
-                                                    ...backup.definition.rows,
-                                                    row,
-                                                ],
-                                            });
-                                        }
-                                    }}
-                                >
-                                    <Plus /> Add row
-                                </Button>
-                            </div>
                         </div>
-                        <section className="space-y-3 border border-slate-300 bg-white p-4">
-                            <h3 className="text-sm font-semibold">
-                                Use these results in the DUPA
-                            </h3>
-                            <p className="text-xs text-slate-600">
-                                Choose where a result should go. Preview the
-                                changes below before Apply &amp; Save.
-                            </p>
-                            {backup.definition.outputs.map((v) => (
-                                <div
-                                    key={v.key}
-                                    className="flex flex-wrap items-center gap-2 text-xs"
-                                >
-                                    <span className="min-w-48 flex-1">
-                                        {v.label}:{' '}
-                                        <strong>
-                                            {displayNumber(
-                                                preview?.values[
-                                                    `${backup.key}.outputs.${v.key}`
-                                                ],
-                                            )}
-                                        </strong>{' '}
-                                        {v.unit}
-                                    </span>
-                                    <select
-                                        aria-label={`Use ${v.label} for`}
-                                        className={selectClass}
-                                        value=""
-                                        onChange={(e) =>
-                                            bind(
-                                                e.target.value,
-                                                `=${backup.key}.outputs.${v.key}`,
-                                            )
-                                        }
-                                    >
-                                        <option value="">
-                                            Use result for…
-                                        </option>
-                                        {targets.map((t, i) => (
-                                            <option key={i} value={i}>
-                                                {t.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            ))}
-                        </section>
-                        <details className="border border-slate-300 bg-white p-4">
-                            <summary className="cursor-pointer text-sm font-semibold">
-                                Customize table, inputs and result formulas
-                            </summary>
-                            <div className="mt-4 space-y-4">
-                                <p className="text-xs text-slate-600">
-                                    Use an input name directly, e.g. =Test, or
-                                    write =inputs.Test. When an input and a
-                                    result share a name, the short name refers
-                                    to the input. Use outputs.key to reference a
-                                    result explicitly.
-                                </p>
-                                <p className="text-xs text-slate-600">
-                                    Row formula: =ROUND(a*b*depth*count,2).
-                                    Column total: =SUM(rows.volume). Inputs use
-                                    inputs.key; other results use outputs.key.
-                                    Rounding follows ROUND and ROUNDUP.
-                                </p>
-                                <div className="flex gap-2">
-                                    <Input
-                                        aria-label="New column key"
-                                        className="max-w-xs bg-white text-slate-950"
-                                        placeholder="New column key, e.g. length"
-                                        value={columnKey}
-                                        onChange={(e) =>
-                                            setColumnKey(e.target.value)
-                                        }
-                                    />
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        className={buttonClass}
-                                        disabled={
-                                            !/^[A-Za-z_][A-Za-z_0-9]*$/.test(
-                                                columnKey,
-                                            ) ||
-                                            backup.definition.columns.some(
-                                                (c) => c.key === columnKey,
-                                            ) ||
-                                            backup.definition.columns.length >=
-                                                30
-                                        }
-                                        onClick={() => {
-                                            table({
-                                                ...backup.definition,
-                                                columns: [
-                                                    ...backup.definition
-                                                        .columns,
-                                                    {
-                                                        key: columnKey,
-                                                        label: columnKey,
-                                                    },
-                                                ],
-                                                rows: backup.definition.rows.map(
-                                                    (r) => ({
-                                                        ...r,
-                                                        cells: {
-                                                            ...r.cells,
-                                                            [columnKey]: 0,
-                                                        },
-                                                    }),
-                                                ),
-                                            });
-                                            setColumnKey('');
-                                        }}
-                                    >
-                                        Add column
-                                    </Button>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {backup.definition.columns.map((c, i) => (
-                                        <div
-                                            key={c.key}
-                                            className="flex items-center gap-2 border border-slate-300 p-2 text-xs"
-                                        >
-                                            <code>{c.key}</code>
-                                            <Input
-                                                aria-label={`Column ${c.key} label`}
-                                                className="h-7 w-28 bg-white text-slate-950"
-                                                value={c.label}
-                                                onChange={(e) =>
-                                                    table({
-                                                        ...backup.definition,
-                                                        columns:
-                                                            backup.definition.columns.map(
-                                                                (v, j) =>
-                                                                    j === i
-                                                                        ? {
-                                                                              ...v,
-                                                                              label: e
-                                                                                  .target
-                                                                                  .value,
-                                                                          }
-                                                                        : v,
-                                                            ),
-                                                    })
-                                                }
-                                            />
-                                            <button
-                                                type="button"
-                                                aria-label={`Remove column ${c.label}`}
-                                                onClick={() =>
-                                                    table({
-                                                        ...backup.definition,
-                                                        columns:
-                                                            backup.definition.columns.filter(
-                                                                (_, j) =>
-                                                                    j !== i,
-                                                            ),
-                                                        rows: backup.definition.rows.map(
-                                                            (r) => ({
-                                                                ...r,
-                                                                cells: Object.fromEntries(
-                                                                    Object.entries(
-                                                                        r.cells,
-                                                                    ).filter(
-                                                                        ([k]) =>
-                                                                            k !==
-                                                                            c.key,
-                                                                    ),
-                                                                ),
-                                                            }),
-                                                        ),
-                                                    })
-                                                }
-                                            >
-                                                <Trash2 className="size-3.5" />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                                {(['inputs', 'outputs'] as const).map(
-                                    (type) => (
-                                        <div key={type} className="space-y-2">
-                                            <h4 className="text-sm font-medium">
-                                                {type === 'inputs'
-                                                    ? 'Inputs / productivity'
-                                                    : 'Result formulas'}
-                                            </h4>
-                                            {backup.definition[type].map(
-                                                (v, i) => (
-                                                    <div
-                                                        key={i}
-                                                        className="grid gap-2 border border-slate-200 p-2 sm:grid-cols-[1fr_1fr_5rem_2fr_auto]"
-                                                    >
-                                                        {(
-                                                            [
-                                                                'key',
-                                                                'label',
-                                                                'unit',
-                                                                'value',
-                                                            ] as const
-                                                        ).map((field) => (
-                                                            <Input
-                                                                key={field}
-                                                                aria-label={`${type} ${field}`}
-                                                                className="h-8 bg-white text-xs text-slate-950"
-                                                                placeholder={
-                                                                    field ===
-                                                                    'value'
-                                                                        ? 'Value or =formula'
-                                                                        : field
-                                                                }
-                                                                value={
-                                                                    v[field] ??
-                                                                    ''
-                                                                }
-                                                                onChange={(e) =>
-                                                                    table({
-                                                                        ...backup.definition,
-                                                                        [type]: backup.definition[
-                                                                            type
-                                                                        ].map(
-                                                                            (
-                                                                                n,
-                                                                                j,
-                                                                            ) =>
-                                                                                j ===
-                                                                                i
-                                                                                    ? {
-                                                                                          ...n,
-                                                                                          [field]:
-                                                                                              e
-                                                                                                  .target
-                                                                                                  .value,
-                                                                                      }
-                                                                                    : n,
-                                                                        ),
-                                                                    })
-                                                                }
-                                                            />
-                                                        ))}
-                                                        <Button
-                                                            type="button"
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            className="text-slate-700"
-                                                            onClick={() =>
-                                                                table({
-                                                                    ...backup.definition,
-                                                                    [type]: backup.definition[
-                                                                        type
-                                                                    ].filter(
-                                                                        (
-                                                                            _,
-                                                                            j,
-                                                                        ) =>
-                                                                            j !==
-                                                                            i,
-                                                                    ),
-                                                                })
-                                                            }
-                                                        >
-                                                            <Trash2 />
-                                                        </Button>
-                                                    </div>
-                                                ),
-                                            )}
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                className={buttonClass}
-                                                onClick={() => addNamed(type)}
-                                            >
-                                                Add{' '}
-                                                {type === 'inputs'
-                                                    ? 'input'
-                                                    : 'result'}
-                                            </Button>
-                                        </div>
-                                    ),
-                                )}
-                            </div>
-                        </details>
                     </fieldset>
                 )}
-                {document.bindings.length > 0 && (
-                    <section className="mx-auto mt-4 max-w-[1400px] space-y-2 border border-slate-300 bg-white p-4">
-                        <h3 className="text-sm font-semibold">
-                            Linked DUPA fields
-                        </h3>
-                        {document.bindings.map((b, i) => (
-                            <div
-                                key={i}
-                                className="flex flex-wrap items-center gap-2 border-b border-slate-100 py-2 text-sm"
-                            >
-                                <span className="min-w-48 flex-1">
-                                    {targets.find(
-                                        (t) =>
-                                            t.kind === b.kind &&
-                                            t.row_uuid === b.row_uuid &&
-                                            t.field === b.field,
-                                    )?.label ?? 'Removed detail'}
-                                </span>
-                                <select
-                                    aria-label={`Result for ${targets.find((t) => t.kind === b.kind && t.row_uuid === b.row_uuid && t.field === b.field)?.label ?? b.field}`}
-                                    className={`${selectClass} min-w-48`}
-                                    disabled={busy}
-                                    value={
-                                        exports.find(
-                                            (v) =>
-                                                `=${v.path}` ===
-                                                b.formula.trim(),
-                                        )?.path ?? ''
-                                    }
-                                    onChange={(e) => {
-                                        if (!e.target.value) {
-                                            return;
-                                        }
-
-                                        // This chooses the source for the field, replacing any previous
-                                        // reference or custom formula rather than concatenating tokens.
-                                        edit({
-                                            ...document,
-                                            bindings: document.bindings.map(
-                                                (v, j) =>
-                                                    j === i
-                                                        ? {
-                                                              ...v,
-                                                              formula: `=${e.target.value}`,
-                                                          }
-                                                        : v,
-                                            ),
-                                        });
-                                    }}
-                                >
-                                    <option value="">
-                                        Custom formula / choose result…
-                                    </option>
-                                    {exports.map((v) => (
-                                        <option key={v.path} value={v.path}>
-                                            {v.label}
-                                            {preview?.variables[v.path]
-                                                ? ` = ${displayNumber(preview.variables[v.path].value)}`
-                                                : ''}
-                                        </option>
-                                    ))}
-                                </select>
-                                <details>
-                                    <summary className="cursor-pointer text-xs text-slate-500">
-                                        Formula
-                                    </summary>
-                                    <p className="mt-2 text-xs text-slate-500">
-                                        Enter arithmetic here for a custom
-                                        formula. Choosing a result above
-                                        replaces this formula.
-                                    </p>
-                                    <div className="mt-2 flex gap-2">
-                                        <Input
-                                            aria-label="Binding formula"
-                                            disabled={busy}
-                                            className="min-w-64 bg-white font-mono text-xs text-slate-950"
-                                            value={b.formula}
-                                            onChange={(e) =>
-                                                edit({
-                                                    ...document,
-                                                    bindings:
-                                                        document.bindings.map(
-                                                            (v, j) =>
-                                                                j === i
-                                                                    ? {
-                                                                          ...v,
-                                                                          formula:
-                                                                              e
-                                                                                  .target
-                                                                                  .value,
-                                                                      }
-                                                                    : v,
-                                                        ),
-                                                })
-                                            }
-                                        />
-                                    </div>
-                                </details>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={busy}
-                                    className={buttonClass}
-                                    onClick={() =>
-                                        edit({
-                                            ...document,
-                                            bindings: document.bindings.filter(
-                                                (_, j) => j !== i,
-                                            ),
-                                        })
-                                    }
-                                >
-                                    Use manual value
-                                </Button>
-                            </div>
-                        ))}
-                    </section>
-                )}
-                <details className="mx-auto mt-4 max-w-[1400px] border border-slate-300 bg-white p-4">
-                    <summary className="cursor-pointer text-sm text-slate-600">
-                        Add a custom DUPA formula
-                    </summary>
-                    <div className="mt-3 flex gap-2">
-                        <select
-                            aria-label="Formula target field"
-                            className={selectClass}
-                            value={formulaTarget}
-                            onChange={(e) => setFormulaTarget(e.target.value)}
-                        >
-                            <option value="">Choose DUPA field…</option>
-                            {targets.map((t, i) => (
-                                <option key={i} value={i}>
-                                    {t.label}
-                                </option>
-                            ))}
-                        </select>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className={buttonClass}
-                            disabled={busy || formulaTarget === ''}
-                            onClick={() => {
-                                bind(formulaTarget, '=0');
-                                setFormulaTarget('');
-                            }}
-                        >
-                            Add formula
-                        </Button>
-                    </div>
-                </details>
                 {preview && (
                     <div className="mx-auto mt-4 max-w-[1400px] border border-emerald-300 bg-emerald-50 p-4 text-sm">
                         <h3 className="mb-2 font-semibold">

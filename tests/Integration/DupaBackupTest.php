@@ -187,6 +187,35 @@ class DupaBackupTest extends TestCase
         $this->assertDatabaseCount('dupa_detail_backups', 1);
     }
 
+    public function test_quantity_and_equipment_days_bind_and_recalculate_from_backup_results(): void
+    {
+        $equipment = $this->estimate->equipment()->sole();
+        $this->document['bindings'] = [
+            ['kind' => 'estimate', 'field' => 'quantity', 'formula' => '=excavation.outputs.total_volume'],
+            ['kind' => 'equipment', 'row_uuid' => $equipment->row_uuid, 'field' => 'no_of_days', 'formula' => '=ROUNDUP(excavation.outputs.equipment_volume/20/row.no_of_units,0)'],
+        ];
+        $this->apply();
+        $values = $this->estimate->backup_applied['values'];
+        $this->assertEqualsWithDelta($values['excavation.outputs.total_volume'], $this->estimate->quantity, 0.0001);
+        $this->assertEquals(ceil($values['excavation.outputs.equipment_volume'] / 20), $this->estimate->equipment()->sole()->no_of_days);
+        $data = $this->estimate->toArray();
+        $data['quantity'] = 999;
+        $data['equipment'][0]['no_of_units'] = 2;
+        $data['equipment'][0]['no_of_days'] = 999;
+        $this->putJson("/admin/dupas/{$this->dupa->id}/estimates/ADD", $data)->assertOk();
+        $this->assertEqualsWithDelta($values['excavation.outputs.total_volume'], $this->estimate->fresh()->quantity, 0.0001);
+        $this->assertEquals(ceil($values['excavation.outputs.equipment_volume'] / 20 / 2), $this->estimate->equipment()->sole()->no_of_days);
+
+        $this->document['bindings'] = [];
+        $this->apply();
+        $data = $this->estimate->toArray();
+        $data['quantity'] = 7;
+        $data['equipment'][0]['no_of_days'] = 4;
+        $this->putJson("/admin/dupas/{$this->dupa->id}/estimates/ADD", $data)->assertOk();
+        $this->assertSame(7.0, $this->estimate->fresh()->quantity);
+        $this->assertSame(4.0, $this->estimate->equipment()->sole()->no_of_days);
+    }
+
     public function test_draft_does_not_change_applied_values_and_ordinary_save_uses_applied_formulas(): void
     {
         $this->apply();

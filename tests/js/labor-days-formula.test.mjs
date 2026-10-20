@@ -40,3 +40,11 @@ test('stored formulas retain their chosen source and productivity', () => {
     assert.equal(parseLaborDaysFormula('=excavation.outputs.labor_days'), null);
     assert.equal(parseLaborDaysFormula(undefined), null);
 });
+
+test('equipment days formulas retain the unit-count reference', () => {
+    const formula = '=ROUNDUP(excavation.outputs.equipment_volume/20/row.no_of_units,0)';
+    assert.deepEqual(parseLaborDaysFormula(formula, 'no_of_units'), { source: 'excavation.outputs.equipment_volume', productivity: 20 });
+    assert.equal(parseLaborDaysFormula(formula), null);
+    assert.equal(parseLaborDaysFormula('=ROUNDUP(excavation.outputs.manual_volume/1.5/row.no_of_person,0)', 'no_of_units'), null);
+    assert.equal(laborDays(100, 20, 2), 3);
+});
