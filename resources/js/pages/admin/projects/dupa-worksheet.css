@@ -290,10 +290,17 @@
 .dupa-worksheet .dupa-resource-sheet + .dupa-resource-sheet {
     margin-top: 8px;
 }
-.dupa-resource-sheet > [data-sheet-picker] {
+.dupa-worksheet .dupa-resource-sheet > [data-sheet-picker] {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
     border: 0;
-    border-bottom: 1px solid var(--sheet-line);
+    border-top: 1px solid var(--sheet-line);
+    border-radius: 0 0 calc(var(--sheet-radius) - 1px)
+        calc(var(--sheet-radius) - 1px);
+    background: var(--sheet-paper);
     padding: 6px;
+    box-shadow: 0 -3px 8px rgb(15 23 42 / 5%);
 }
 .dupa-resource-sheet [data-sheet-grid] {
     min-width: 0;

@@ -1345,7 +1345,10 @@ export default function DupaEdit({
                                             </div>
                                         ))}
                                     </div>
-                                    <div className="flex justify-center pt-1">
+                                    <div
+                                        data-sheet-picker
+                                        className="flex justify-center"
+                                    >
                                         <Button
                                             type="button"
                                             size="sm"
@@ -1382,76 +1385,6 @@ export default function DupaEdit({
                                             B. Equipment
                                         </h3>
                                     </div>
-                                    <ResourcePicker
-                                        title="Equipment"
-                                        items={equipmentCatalog.map((item) => ({
-                                            id: item.id,
-                                            label: `${item.equipment} · ${money.format(item.rental)}`,
-                                        }))}
-                                        onAdd={(id) => {
-                                            const item = equipmentCatalog.find(
-                                                (entry) => entry.id === id,
-                                            );
-
-                                            if (item) {
-                                                setEstimate({
-                                                    ...estimate,
-                                                    equipment: [
-                                                        ...estimate.equipment,
-                                                        {
-                                                            equipment_id:
-                                                                item.id,
-                                                            designation:
-                                                                item.equipment,
-                                                            no_of_units: 1,
-                                                            no_of_days: 1,
-                                                            rental_unit_cost:
-                                                                item.rental,
-                                                            is_included: true,
-                                                        },
-                                                    ],
-                                                });
-                                            }
-                                        }}
-                                        quickCreate={
-                                            canCreateResources ? (
-                                                <QuickEquipmentCreate
-                                                    csrfToken={csrf_token}
-                                                    onCreated={(item) => {
-                                                        setEquipmentCatalog(
-                                                            (current) =>
-                                                                [
-                                                                    ...current,
-                                                                    item,
-                                                                ].sort((a, b) =>
-                                                                    a.equipment.localeCompare(
-                                                                        b.equipment,
-                                                                    ),
-                                                                ),
-                                                        );
-                                                        setEstimate({
-                                                            ...estimate,
-                                                            equipment: [
-                                                                ...estimate.equipment,
-                                                                {
-                                                                    equipment_id:
-                                                                        item.id,
-                                                                    designation:
-                                                                        item.equipment,
-                                                                    no_of_units: 1,
-                                                                    no_of_days: 1,
-                                                                    rental_unit_cost:
-                                                                        item.rental,
-                                                                    is_included: true,
-                                                                },
-                                                            ],
-                                                        });
-                                                    }}
-                                                />
-                                            ) : undefined
-                                        }
-                                    />
-
                                     <div
                                         data-sheet-grid
                                         className="overflow-x-auto"
@@ -1671,6 +1604,75 @@ export default function DupaEdit({
                                             ),
                                         )}
                                     </div>
+                                    <ResourcePicker
+                                        title="Equipment"
+                                        items={equipmentCatalog.map((item) => ({
+                                            id: item.id,
+                                            label: `${item.equipment} · ${money.format(item.rental)}`,
+                                        }))}
+                                        onAdd={(id) => {
+                                            const item = equipmentCatalog.find(
+                                                (entry) => entry.id === id,
+                                            );
+
+                                            if (item) {
+                                                setEstimate({
+                                                    ...estimate,
+                                                    equipment: [
+                                                        ...estimate.equipment,
+                                                        {
+                                                            equipment_id:
+                                                                item.id,
+                                                            designation:
+                                                                item.equipment,
+                                                            no_of_units: 1,
+                                                            no_of_days: 1,
+                                                            rental_unit_cost:
+                                                                item.rental,
+                                                            is_included: true,
+                                                        },
+                                                    ],
+                                                });
+                                            }
+                                        }}
+                                        quickCreate={
+                                            canCreateResources ? (
+                                                <QuickEquipmentCreate
+                                                    csrfToken={csrf_token}
+                                                    onCreated={(item) => {
+                                                        setEquipmentCatalog(
+                                                            (current) =>
+                                                                [
+                                                                    ...current,
+                                                                    item,
+                                                                ].sort((a, b) =>
+                                                                    a.equipment.localeCompare(
+                                                                        b.equipment,
+                                                                    ),
+                                                                ),
+                                                        );
+                                                        setEstimate({
+                                                            ...estimate,
+                                                            equipment: [
+                                                                ...estimate.equipment,
+                                                                {
+                                                                    equipment_id:
+                                                                        item.id,
+                                                                    designation:
+                                                                        item.equipment,
+                                                                    no_of_units: 1,
+                                                                    no_of_days: 1,
+                                                                    rental_unit_cost:
+                                                                        item.rental,
+                                                                    is_included: true,
+                                                                },
+                                                            ],
+                                                        });
+                                                    }}
+                                                />
+                                            ) : undefined
+                                        }
+                                    />
                                 </div>
 
                                 <div
@@ -1681,6 +1683,154 @@ export default function DupaEdit({
                                         <h3 className="font-semibold">
                                             C. Materials
                                         </h3>
+                                    </div>
+                                    <div
+                                        data-sheet-grid
+                                        className="overflow-x-auto"
+                                    >
+                                        {estimate.items.length > 0 && (
+                                            <ResourceColumns
+                                                columns="#,Material,Unit,Unit cost,Quantity,Group,Amount,Include"
+                                                className={`${itemGrid} min-w-[62rem]`}
+                                            />
+                                        )}
+                                        {estimate.items.map((row, index) => (
+                                            <div key={index}>
+                                                <div
+                                                    data-sheet-row
+                                                    className={`grid min-w-[62rem] items-center gap-1 ${itemGrid}`}
+                                                >
+                                                    <span className="text-center text-xs text-muted-foreground tabular-nums">
+                                                        {index + 1}
+                                                    </span>
+                                                    <div className="flex min-h-8 items-center text-sm">
+                                                        {
+                                                            itemCatalog.find(
+                                                                (item) =>
+                                                                    item.id ===
+                                                                    row.item_id,
+                                                            )?.itemcode
+                                                        }{' '}
+                                                        · {row.designation}
+                                                    </div>
+                                                    <div className="flex min-h-8 items-center text-sm">
+                                                        {row.unit}
+                                                    </div>
+                                                    <div className="flex min-h-8 items-center text-sm tabular-nums">
+                                                        {money.format(
+                                                            number(
+                                                                row.unit_cost,
+                                                            ),
+                                                        )}
+                                                    </div>
+                                                    <div className="min-w-0 space-y-1">
+                                                        <Input
+                                                            data-sheet-column="quantity"
+                                                            aria-label={`Quantity for item row ${index + 1}`}
+                                                            type="number"
+                                                            min="0"
+                                                            step="0.0001"
+                                                            title="Quantity"
+                                                            value={row.qty}
+                                                            readOnly={bound(
+                                                                'items',
+                                                                'qty',
+                                                                row.row_uuid,
+                                                            )}
+                                                            onChange={(event) =>
+                                                                updateItem(
+                                                                    index,
+                                                                    {
+                                                                        ...row,
+                                                                        qty: event
+                                                                            .target
+                                                                            .value,
+                                                                    },
+                                                                )
+                                                            }
+                                                        />
+                                                        {resultPicker(
+                                                            'items',
+                                                            'qty',
+                                                            row.row_uuid,
+                                                        )}
+                                                    </div>
+                                                    <div className="dupa-cell">
+                                                        <Input
+                                                            data-sheet-column="group"
+                                                            aria-label={`Group for item row ${index + 1}`}
+                                                            list="project-item-groups"
+                                                            maxLength={255}
+                                                            placeholder="Group (optional)"
+                                                            title="Group (optional)"
+                                                            value={
+                                                                row.group ?? ''
+                                                            }
+                                                            onChange={(
+                                                                event,
+                                                            ) => {
+                                                                updateItem(
+                                                                    index,
+                                                                    {
+                                                                        ...row,
+                                                                        group: event
+                                                                            .target
+                                                                            .value,
+                                                                    },
+                                                                );
+                                                                setItemDraft({
+                                                                    ...itemDraft,
+                                                                    group: event
+                                                                        .target
+                                                                        .value,
+                                                                });
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    <output
+                                                        className="pr-1 text-right text-xs font-medium tabular-nums"
+                                                        aria-label={`Item row ${index + 1} amount`}
+                                                    >
+                                                        {money.format(
+                                                            number(row.qty) *
+                                                                number(
+                                                                    row.unit_cost,
+                                                                ),
+                                                        )}
+                                                    </output>
+                                                    <Include
+                                                        checked={
+                                                            row.is_included
+                                                        }
+                                                        compact={embedded}
+                                                        onChange={(checked) =>
+                                                            updateItem(index, {
+                                                                ...row,
+                                                                is_included:
+                                                                    checked,
+                                                            })
+                                                        }
+                                                    />
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        <Remove
+                                                            onClick={() =>
+                                                                setEstimate({
+                                                                    ...estimate,
+                                                                    items: estimate.items.filter(
+                                                                        (
+                                                                            _,
+                                                                            i,
+                                                                        ) =>
+                                                                            i !==
+                                                                            index,
+                                                                    ),
+                                                                })
+                                                            }
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                     <div
                                         data-sheet-picker
@@ -1856,155 +2006,6 @@ export default function DupaEdit({
                                             group stays filled for the next
                                             item.
                                         </p>
-                                    </div>
-
-                                    <div
-                                        data-sheet-grid
-                                        className="overflow-x-auto"
-                                    >
-                                        {estimate.items.length > 0 && (
-                                            <ResourceColumns
-                                                columns="#,Material,Unit,Unit cost,Quantity,Group,Amount,Include"
-                                                className={`${itemGrid} min-w-[62rem]`}
-                                            />
-                                        )}
-                                        {estimate.items.map((row, index) => (
-                                            <div key={index}>
-                                                <div
-                                                    data-sheet-row
-                                                    className={`grid min-w-[62rem] items-center gap-1 ${itemGrid}`}
-                                                >
-                                                    <span className="text-center text-xs text-muted-foreground tabular-nums">
-                                                        {index + 1}
-                                                    </span>
-                                                    <div className="flex min-h-8 items-center text-sm">
-                                                        {
-                                                            itemCatalog.find(
-                                                                (item) =>
-                                                                    item.id ===
-                                                                    row.item_id,
-                                                            )?.itemcode
-                                                        }{' '}
-                                                        · {row.designation}
-                                                    </div>
-                                                    <div className="flex min-h-8 items-center text-sm">
-                                                        {row.unit}
-                                                    </div>
-                                                    <div className="flex min-h-8 items-center text-sm tabular-nums">
-                                                        {money.format(
-                                                            number(
-                                                                row.unit_cost,
-                                                            ),
-                                                        )}
-                                                    </div>
-                                                    <div className="min-w-0 space-y-1">
-                                                        <Input
-                                                            data-sheet-column="quantity"
-                                                            aria-label={`Quantity for item row ${index + 1}`}
-                                                            type="number"
-                                                            min="0"
-                                                            step="0.0001"
-                                                            title="Quantity"
-                                                            value={row.qty}
-                                                            readOnly={bound(
-                                                                'items',
-                                                                'qty',
-                                                                row.row_uuid,
-                                                            )}
-                                                            onChange={(event) =>
-                                                                updateItem(
-                                                                    index,
-                                                                    {
-                                                                        ...row,
-                                                                        qty: event
-                                                                            .target
-                                                                            .value,
-                                                                    },
-                                                                )
-                                                            }
-                                                        />
-                                                        {resultPicker(
-                                                            'items',
-                                                            'qty',
-                                                            row.row_uuid,
-                                                        )}
-                                                    </div>
-                                                    <div className="dupa-cell">
-                                                        <Input
-                                                            data-sheet-column="group"
-                                                            aria-label={`Group for item row ${index + 1}`}
-                                                            list="project-item-groups"
-                                                            maxLength={255}
-                                                            placeholder="Group (optional)"
-                                                            title="Group (optional)"
-                                                            value={
-                                                                row.group ?? ''
-                                                            }
-                                                            onChange={(
-                                                                event,
-                                                            ) => {
-                                                                updateItem(
-                                                                    index,
-                                                                    {
-                                                                        ...row,
-                                                                        group: event
-                                                                            .target
-                                                                            .value,
-                                                                    },
-                                                                );
-                                                                setItemDraft({
-                                                                    ...itemDraft,
-                                                                    group: event
-                                                                        .target
-                                                                        .value,
-                                                                });
-                                                            }}
-                                                        />
-                                                    </div>
-                                                    <output
-                                                        className="pr-1 text-right text-xs font-medium tabular-nums"
-                                                        aria-label={`Item row ${index + 1} amount`}
-                                                    >
-                                                        {money.format(
-                                                            number(row.qty) *
-                                                                number(
-                                                                    row.unit_cost,
-                                                                ),
-                                                        )}
-                                                    </output>
-                                                    <Include
-                                                        checked={
-                                                            row.is_included
-                                                        }
-                                                        compact={embedded}
-                                                        onChange={(checked) =>
-                                                            updateItem(index, {
-                                                                ...row,
-                                                                is_included:
-                                                                    checked,
-                                                            })
-                                                        }
-                                                    />
-                                                    <div className="flex items-center justify-end gap-1">
-                                                        <Remove
-                                                            onClick={() =>
-                                                                setEstimate({
-                                                                    ...estimate,
-                                                                    items: estimate.items.filter(
-                                                                        (
-                                                                            _,
-                                                                            i,
-                                                                        ) =>
-                                                                            i !==
-                                                                            index,
-                                                                    ),
-                                                                })
-                                                            }
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
                                     </div>
                                 </div>
                             </div>
@@ -2585,7 +2586,7 @@ function ItemPicker({
                 <ChevronDown className="size-4 shrink-0 opacity-50" />
             </button>
             {open && (
-                <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 text-popover-foreground shadow-md md:w-[min(36rem,calc(100vw-4rem))]">
+                <div className="absolute bottom-full z-50 mb-1 flex max-h-[min(24rem,60vh)] w-full flex-col rounded-md border bg-popover p-1 text-popover-foreground shadow-md md:w-[min(36rem,calc(100vw-4rem))]">
                     <Input
                         ref={searchInput}
                         aria-label="Search catalog items"
@@ -2630,7 +2631,7 @@ function ItemPicker({
                     <div
                         id={listId}
                         role="listbox"
-                        className="mt-1 max-h-64 overflow-y-auto"
+                        className="mt-1 max-h-64 min-h-0 overflow-y-auto"
                     >
                         {matches.length ? (
                             matches.map((item, index) => (
