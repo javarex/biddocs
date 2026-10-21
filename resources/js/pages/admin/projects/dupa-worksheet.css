@@ -822,3 +822,393 @@
     height: 32px;
     min-height: 32px;
 }
+
+/* Match the resource tables to the Backup worksheet. */
+.dupa-worksheet .dupa-resource-sheet {
+    border: 1px solid #94a3b8;
+    border-radius: 2px;
+    overflow: visible;
+}
+.dupa-worksheet .dupa-resource-sheet > .dupa-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-radius: 0;
+    border-bottom: 1px solid #94a3b8;
+    background: linear-gradient(110deg, #eaf2ed, #f8fbf9);
+    padding: 7px 10px;
+}
+.dupa-sheet-count {
+    font-size: 11px;
+    color: #52665a;
+    font-variant-numeric: tabular-nums;
+}
+.dupa-worksheet .dupa-resource-sheet [data-sheet-letters] {
+    background: #f1f5f9;
+    color: #64748b;
+    border-bottom: 1px solid var(--sheet-line);
+}
+.dupa-worksheet .dupa-resource-sheet [data-sheet-letters] > span {
+    padding: 3px 6px;
+    font-size: 10px;
+    font-weight: 400;
+}
+.dupa-worksheet
+    .dupa-resource-sheet
+    [data-sheet-columns]:not([data-sheet-letters]) {
+    background: #f8fafc;
+    color: #334155;
+    border-bottom: 1px solid #94a3b8;
+}
+.dupa-worksheet
+    .dupa-resource-sheet
+    [data-sheet-columns]:not([data-sheet-letters])
+    > span {
+    padding: 5px 6px;
+}
+.dupa-resource-sheet [data-sheet-columns] > span:first-child {
+    background: #f1f5f9;
+    color: #64748b;
+    font-weight: 400;
+}
+.dupa-worksheet .dupa-resource-sheet [data-sheet-row] > span:first-child {
+    background: #f1f5f9;
+}
+.dupa-worksheet .dupa-resource-sheet [data-sheet-total] {
+    border-top: 2px solid #217346;
+    background: #eaf2ed;
+    color: #185c37;
+}
+.dupa-worksheet .dupa-resource-sheet [data-sheet-total] > output {
+    background: #eaf2ed;
+}
+.dupa-resource-sheet [data-sheet-empty] {
+    background: #fff;
+}
+.dupa-worksheet .dupa-resource-sheet > [data-sheet-picker] {
+    border-radius: 0;
+    border-top: 1px solid #94a3b8;
+    background: #f8fbf9;
+    padding: 8px 10px;
+}
+.dupa-worksheet .dupa-resource-sheet > [data-sheet-picker].flex {
+    justify-content: flex-start;
+}
+.dupa-worksheet .sheet-add-labor {
+    text-decoration: none;
+    font-size: 12px;
+}
+
+/* One continuous worksheet, with dividers for each resource group. */
+.dupa-worksheet .dupa-resource-workbook {
+    border: 1px solid #94a3b8;
+    border-radius: 2px;
+    background: var(--sheet-paper);
+}
+.dupa-worksheet .dupa-resource-workbook > .dupa-resource-sheet {
+    border: 0;
+    border-radius: 0;
+    margin-top: 0;
+}
+.dupa-worksheet
+    .dupa-resource-workbook
+    > .dupa-resource-sheet
+    + .dupa-resource-sheet {
+    margin-top: 0;
+    border-top: 2px solid #217346;
+}
+.dupa-worksheet .dupa-resource-workbook .dupa-section-heading {
+    border-left: 3px solid #217346;
+    background: #eaf2ed;
+}
+.dupa-worksheet .dupa-resource-workbook .dupa-resource-sheet > div:last-child {
+    border-radius: 0;
+}
+
+/* Fit the grouped estimate to the page, following the printed worksheet layout. */
+.dupa-worksheet .dupa-analysis-layout {
+    grid-template-columns: minmax(0, 1fr);
+}
+.dupa-worksheet .dupa-analysis-summary {
+    position: static;
+}
+.dupa-worksheet .dupa-resource-workbook {
+    --resource-columns: 1.5rem minmax(0, 2.6fr) minmax(0, 0.65fr)
+        minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1.15fr) 2rem 3.5rem;
+    width: 100%;
+    min-width: 0;
+    border-color: #94a3b8;
+}
+.dupa-worksheet .dupa-resource-workbook .dupa-resource-sheet [data-sheet-grid] {
+    width: 100%;
+    min-width: 0;
+    overflow: visible;
+}
+.dupa-worksheet
+    .dupa-resource-workbook
+    .dupa-resource-sheet[data-sheet-section]
+    [data-sheet-columns],
+.dupa-worksheet
+    .dupa-resource-workbook
+    .dupa-resource-sheet[data-sheet-section]
+    [data-sheet-row] {
+    grid-template-columns: var(--resource-columns);
+    width: 100%;
+    min-width: 0;
+}
+.dupa-worksheet
+    .dupa-resource-workbook
+    .dupa-resource-sheet
+    [data-sheet-letters] {
+    display: none;
+}
+.dupa-worksheet
+    .dupa-resource-workbook
+    .dupa-resource-sheet
+    > .dupa-section-heading {
+    display: grid;
+    grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+    gap: 0;
+    padding: 0;
+    border-left: 0;
+    background: #fff;
+}
+.dupa-resource-workbook .dupa-section-heading::before {
+    content: attr(data-sheet-group);
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-right: 1px solid var(--sheet-line);
+    color: #334155;
+    font-size: 11px;
+}
+.dupa-resource-workbook .dupa-section-heading h3 {
+    padding: 7px 8px;
+}
+.dupa-resource-workbook .dupa-sheet-count {
+    padding-right: 8px;
+}
+.dupa-worksheet
+    .dupa-resource-workbook
+    .dupa-resource-sheet
+    + .dupa-resource-sheet {
+    border-top: 1px solid #94a3b8;
+}
+.dupa-worksheet
+    .dupa-resource-workbook
+    [data-sheet-row]:not([data-sheet-empty])
+    > span:first-child,
+.dupa-worksheet
+    .dupa-resource-workbook
+    [data-sheet-columns]
+    > span:first-child {
+    color: transparent;
+    background: #fff;
+}
+.dupa-resource-workbook [data-sheet-row] > *,
+.dupa-resource-workbook [data-sheet-columns] > * {
+    overflow-wrap: anywhere;
+}
+.dupa-worksheet .dupa-resource-workbook [data-sheet-row] > output {
+    padding-inline: 4px;
+    font-size: 11px;
+}
+.dupa-worksheet .dupa-resource-workbook [data-sheet-row] > div > button {
+    max-width: 100%;
+}
+.dupa-resource-workbook .dupa-material-details {
+    padding: 5px 6px !important;
+}
+.dupa-material-designation {
+    color: #1e293b;
+    font-size: 12px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+.dupa-resource-workbook .dupa-material-details input {
+    font-size: 11px;
+    color: #64748b;
+}
+.dupa-worksheet
+    .dupa-resource-workbook
+    .dupa-resource-sheet
+    [data-sheet-total] {
+    border-top: 1px solid #94a3b8;
+    background: #f8fbf9;
+}
+.dupa-worksheet
+    .dupa-resource-workbook
+    .dupa-resource-sheet
+    [data-sheet-total]
+    > output {
+    background: #f8fbf9;
+}
+@media (min-width: 1024px) {
+    .dupa-worksheet .dupa-analysis-summary .dupa-totals {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+@media (max-width: 639px) {
+    .dupa-worksheet .dupa-resource-workbook {
+        --resource-columns: 1rem minmax(0, 1.8fr) minmax(0, 0.6fr)
+            minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1.1fr) 1.5rem 3.25rem;
+    }
+    .dupa-worksheet .dupa-resource-workbook [data-sheet-columns] > span,
+    .dupa-worksheet .dupa-resource-workbook [data-sheet-row] input,
+    .dupa-worksheet .dupa-resource-workbook [data-sheet-row] select {
+        padding-inline: 2px;
+        font-size: 10px;
+    }
+    .dupa-resource-workbook .backup-days-controls {
+        flex-direction: column;
+    }
+    .dupa-worksheet
+        .dupa-resource-workbook
+        .backup-days-cell
+        button.labor-days-trigger {
+        width: 100%;
+        min-width: 0;
+        height: 20px;
+        min-height: 20px;
+    }
+    .dupa-worksheet .dupa-resource-workbook input.backup-days-input {
+        width: 100%;
+        flex: auto;
+    }
+}
+
+@media (min-width: 1024px) {
+    .dupa-resource-workbook .dupa-material-entry {
+        grid-template-columns:
+            minmax(0, 3fr) minmax(0, 0.55fr)
+            minmax(0, 0.85fr) minmax(0, 0.6fr) minmax(0, 1fr) auto;
+    }
+}
+.dupa-worksheet
+    .dupa-resource-workbook
+    .dupa-resource-sheet[data-sheet-section='items']
+    [data-sheet-row]
+    > div:not(.dupa-material-details) {
+    font-size: 11px;
+    padding-inline: 4px;
+}
+
+.dupa-worksheet .dupa-resource-workbook [data-row-actions] > button {
+    width: 24px;
+    min-width: 0;
+    height: 28px;
+    min-height: 28px;
+    padding: 4px;
+    border-radius: 2px;
+}
+.dupa-resource-workbook [data-row-actions] > button:first-child {
+    color: #217346;
+}
+.dupa-worksheet .dupa-material-designation [aria-haspopup='listbox'] {
+    height: auto;
+    min-height: 32px;
+    padding: 2px 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.dupa-group-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-right: 6px;
+}
+.dupa-group-tools .dupa-sheet-count {
+    padding-right: 0;
+}
+
+/* Compact spreadsheet rows, with controls aligned inside the cell borders. */
+.dupa-worksheet .dupa-resource-workbook [data-sheet-row] {
+    min-height: 25px;
+    column-gap: 0;
+    align-items: stretch;
+}
+.dupa-worksheet .dupa-resource-workbook [data-sheet-row] > * {
+    align-content: center;
+    font-size: 11px;
+}
+.dupa-worksheet .dupa-resource-workbook [data-sheet-row] > div {
+    min-height: 24px;
+}
+.dupa-worksheet
+    .dupa-resource-workbook
+    [data-sheet-row]
+    input:not([type='checkbox']),
+.dupa-worksheet .dupa-resource-workbook [data-sheet-row] select {
+    height: 24px;
+    min-height: 24px;
+    padding: 0 4px;
+    font-size: 11px;
+    line-height: 1.2;
+}
+.dupa-worksheet .dupa-resource-workbook [data-sheet-columns] > span {
+    padding-block: 2px;
+    line-height: 1.2;
+}
+.dupa-worksheet .dupa-resource-workbook [data-sheet-row] > output,
+.dupa-worksheet .dupa-resource-workbook [data-sheet-row] > span:first-child {
+    padding-block: 3px;
+}
+.dupa-worksheet .dupa-resource-workbook [data-row-actions] > button {
+    height: 24px;
+    min-height: 24px;
+    padding: 3px;
+}
+.dupa-worksheet .dupa-resource-workbook .backup-days-controls {
+    flex-direction: row;
+}
+.dupa-worksheet
+    .dupa-resource-workbook
+    .backup-days-cell
+    button.labor-days-trigger,
+.dupa-worksheet
+    .dupa-resource-workbook
+    .backup-days-cell
+    button.backup-result-trigger {
+    width: 20px;
+    min-width: 20px;
+    height: 24px;
+    min-height: 24px;
+}
+.dupa-worksheet .dupa-resource-workbook input.backup-days-input {
+    width: 0;
+    flex: 1;
+}
+.dupa-worksheet .dupa-resource-workbook .dupa-material-details {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(4rem, 25%);
+    align-items: center;
+    padding: 0 4px !important;
+}
+.dupa-worksheet
+    .dupa-resource-workbook
+    .dupa-material-designation
+    [aria-haspopup='listbox'] {
+    height: 24px;
+    min-height: 24px;
+    padding: 0;
+    gap: 2px;
+    font-size: 11px;
+}
+.dupa-worksheet
+    .dupa-resource-workbook
+    .dupa-material-designation
+    [aria-haspopup='listbox']
+    > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+}
+.dupa-worksheet .dupa-resource-workbook .dupa-material-details > .dupa-cell {
+    border-left: 1px solid var(--sheet-line);
+}

@@ -1,7 +1,7 @@
 import './dupa-worksheet.css';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { ArrowLeft, ChevronDown, Copy, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import BackupDaysCell from '@/components/backup-days-cell';
 import DupaBackups, {
@@ -61,7 +61,7 @@ type LaborRow = {
 };
 type EquipmentRow = {
     row_uuid?: string;
-    equipment_id: number;
+    equipment_id: number | string;
     designation: string;
     no_of_units: number | string;
     no_of_days: number | string;
@@ -70,19 +70,13 @@ type EquipmentRow = {
 };
 type ItemRow = {
     row_uuid?: string;
-    item_id: number;
+    item_id: number | string;
     designation: string;
     unit: string;
     qty: number | string;
     unit_cost: number | string;
     group: string | null;
     is_included: boolean;
-};
-type ItemDraft = {
-    item_id: string;
-    item_search: string;
-    qty: number | string;
-    group: string;
 };
 type Estimate = BackupEstimate & {
     calculation_mode: string;
@@ -209,26 +203,6 @@ export default function DupaEdit({
     const [backupDirty, setBackupDirty] = useState(false);
     const [backupOpen, setBackupOpen] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [itemDrafts, setItemDrafts] = useState<Record<Side, ItemDraft>>({
-        ADD: {
-            item_id: '',
-            item_search: '',
-            qty: 1,
-            group:
-                [...dupa.estimates.ADD.items]
-                    .reverse()
-                    .find((row) => row.group?.trim())?.group ?? '',
-        },
-        NON_ADD: {
-            item_id: '',
-            item_search: '',
-            qty: 1,
-            group:
-                [...dupa.estimates.NON_ADD.items]
-                    .reverse()
-                    .find((row) => row.group?.trim())?.group ?? '',
-        },
-    });
     const [estimateErrors, setEstimateErrors] = useState<
         Record<string, string>
     >({});
@@ -241,10 +215,9 @@ export default function DupaEdit({
             );
         }
     };
-    const itemDraft = itemDrafts[side];
-    const selectedItem = itemCatalog.find(
-        (item) => item.id === Number(itemDraft.item_id),
-    );
+    const laborSheetRows = Math.max(estimate.labors.length, 1);
+    const equipmentSheetRows = Math.max(estimate.equipment.length, 1);
+    const materialSheetRows = Math.max(estimate.items.length, 1);
     const groupOptions = useMemo(
         () =>
             Array.from(
@@ -266,46 +239,6 @@ export default function DupaEdit({
                     b.kind === kind && b.field === field && b.row_uuid === uuid,
             ),
         );
-    const resultPicker = (
-        kind: 'labors' | 'equipment' | 'items',
-        field: string,
-        uuid?: string,
-    ) => {
-        const binding = estimate.backup_applied?.document.bindings.find(
-            (b) => b.kind === kind && b.field === field && b.row_uuid === uuid,
-        );
-        const options = (estimate.backups ?? []).flatMap((b) =>
-            b.definition.outputs.map((o) => ({
-                value: `=${b.key}.outputs.${o.key}`,
-                label: `${b.name} / ${o.label}`,
-            })),
-        );
-
-        return (
-            <select
-                aria-label={`Value source for ${kind} ${uuid ?? 'unsaved'} ${field}`}
-                className="w-full min-w-0 rounded border bg-background px-1 py-1 text-xs"
-                disabled={saving || backupDirty || !uuid}
-                value={binding?.formula ?? ''}
-                onChange={(e) =>
-                    void switchResult(kind, field, uuid!, e.target.value)
-                }
-            >
-                <option value="">Direct count</option>
-                {binding &&
-                    !options.some((o) => o.value === binding.formula) && (
-                        <option value={binding.formula}>
-                            Custom backup formula
-                        </option>
-                    )}
-                {options.map((o) => (
-                    <option key={o.value} value={o.value}>
-                        {o.label}
-                    </option>
-                ))}
-            </select>
-        );
-    };
     async function persistCurrentEstimate(
         sourceEstimate: Estimate,
     ): Promise<Estimate> {
@@ -575,8 +508,67 @@ export default function DupaEdit({
         };
         setEstimates({ ...estimates, [side]: next });
     };
-    const setItemDraft = (next: ItemDraft) =>
-        setItemDrafts({ ...itemDrafts, [side]: next });
+    const insertResourceRow = (
+        kind: 'labors' | 'equipment' | 'items',
+        after: number,
+    ) => {
+        if (saving || backupDirty) {
+            return;
+        }
+
+        const uuid = crypto.randomUUID();
+
+        if (kind === 'labors') {
+            const rows = [...estimate.labors];
+            rows.splice(after + 1, 0, {
+                row_uuid: uuid,
+                labor_id: '',
+                designation: '',
+                no_of_person: 1,
+                no_of_days: 1,
+                rate: '',
+                is_included: true,
+            });
+            setEstimate({ ...estimate, labors: rows });
+        } else if (kind === 'equipment') {
+            const rows = [...estimate.equipment];
+            rows.splice(after + 1, 0, {
+                row_uuid: uuid,
+                equipment_id: '',
+                designation: '',
+                no_of_units: 1,
+                no_of_days: 1,
+                rental_unit_cost: 0,
+                is_included: true,
+            });
+            setEstimate({ ...estimate, equipment: rows });
+        } else {
+            const rows = [...estimate.items];
+            rows.splice(after + 1, 0, {
+                row_uuid: uuid,
+                item_id: '',
+                designation: '',
+                unit: '',
+                qty: 1,
+                unit_cost: 0,
+                group: rows[after]?.group ?? null,
+                is_included: true,
+            });
+            setEstimate({ ...estimate, items: rows });
+        }
+
+        window.requestAnimationFrame(() => {
+            const row = document.querySelector<HTMLElement>(
+                `[data-resource-row="${uuid}"]`,
+            );
+            const control = row?.querySelector<HTMLElement>('select, button');
+            control?.focus();
+
+            if (kind === 'items') {
+                control?.click();
+            }
+        });
+    };
     const currentSection = sections.find(
         (section) => Number(section.id) === Number(details.data.section_id),
     );
@@ -1203,44 +1195,84 @@ export default function DupaEdit({
                     </CardHeader>
                     <CardContent className="space-y-2">
                         <div className="dupa-analysis-layout">
-                            <div className="dupa-analysis-main space-y-2">
+                            <div
+                                className="dupa-analysis-main dupa-resource-workbook"
+                                role="group"
+                                aria-label="Resource worksheet: Labor, Equipment and Materials"
+                            >
                                 <div
                                     data-sheet-section="labor"
+                                    role="group"
+                                    aria-label="Labor"
                                     className="dupa-resource-sheet border"
                                 >
-                                    <div>
-                                        <h3 className="font-semibold">
-                                            A. Labor
-                                        </h3>
-                                        <p className="text-xs text-muted-foreground">
-                                            Select labor to automatically fill
-                                            its rate.
-                                        </p>
-                                    </div>
                                     <div
-                                        data-sheet-grid
-                                        className="overflow-x-auto"
+                                        className="dupa-section-heading"
+                                        data-sheet-group="A."
                                     >
-                                        {estimate.labors.length > 0 && (
-                                            <ResourceColumns
-                                                columns="#,Labor,Persons,Days,Rate,Amount,Include"
-                                                className={`${laborGrid} min-w-[54rem]`}
-                                            />
-                                        )}
+                                        <h3 className="font-semibold">Labor</h3>
+                                        <span className="dupa-sheet-count">
+                                            {estimate.labors.length}{' '}
+                                            {estimate.labors.length === 1
+                                                ? 'row'
+                                                : 'rows'}
+                                        </span>
+                                    </div>
+                                    <div data-sheet-grid className="min-w-0">
+                                        <ResourceColumns
+                                            startRow={1}
+                                            columns="#,Designation,No. of Persons,No. of Days,Rate,Amount,Use"
+                                            className={`${laborGrid}`}
+                                        />
+
                                         {estimate.labors.length === 0 && (
-                                            <p className="rounded-md border border-dashed px-2 py-2 text-center text-xs text-muted-foreground">
-                                                No labor rows yet. Click Add
-                                                labor to begin.
-                                            </p>
+                                            <div
+                                                data-sheet-row
+                                                data-sheet-empty
+                                                className={`grid ${laborGrid}`}
+                                            >
+                                                <span className="text-center text-xs text-slate-500">
+                                                    2
+                                                </span>
+                                                <span className="col-start-2 col-end-[-2] px-3 py-2 text-xs text-slate-500">
+                                                    No labor rows yet. Click +
+                                                    to add a row.
+                                                </span>
+                                                <div
+                                                    data-row-actions
+                                                    className="flex items-center justify-center"
+                                                >
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        title="Add labor row"
+                                                        aria-label="Add first labor row"
+                                                        disabled={
+                                                            saving ||
+                                                            backupDirty
+                                                        }
+                                                        onClick={() =>
+                                                            insertResourceRow(
+                                                                'labors',
+                                                                -1,
+                                                            )
+                                                        }
+                                                    >
+                                                        <Plus className="size-3.5" />
+                                                    </Button>
+                                                </div>
+                                            </div>
                                         )}
                                         {estimate.labors.map((row, index) => (
                                             <div
                                                 data-sheet-row
-                                                className={`grid min-w-[54rem] items-center gap-1 border-b py-1 last:border-b-0 hover:bg-muted/30 ${laborGrid}`}
-                                                key={index}
+                                                data-resource-row={row.row_uuid}
+                                                className={`grid items-center gap-1 border-b py-1 last:border-b-0 hover:bg-muted/30 ${laborGrid}`}
+                                                key={row.row_uuid ?? index}
                                             >
                                                 <span className="text-center text-xs text-muted-foreground tabular-nums">
-                                                    {index + 1}
+                                                    {index + 2}
                                                 </span>
                                                 <div className="flex min-w-0">
                                                     <select
@@ -1474,7 +1506,29 @@ export default function DupaEdit({
                                                         })
                                                     }
                                                 />
-                                                <div className="flex items-center justify-end gap-1">
+                                                <div
+                                                    data-row-actions
+                                                    className="flex items-center justify-center gap-0.5"
+                                                >
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        title="Add row below"
+                                                        aria-label={`Add labor row below row ${index + 1}`}
+                                                        disabled={
+                                                            saving ||
+                                                            backupDirty
+                                                        }
+                                                        onClick={() =>
+                                                            insertResourceRow(
+                                                                'labors',
+                                                                index,
+                                                            )
+                                                        }
+                                                    >
+                                                        <Plus className="size-3.5" />
+                                                    </Button>
                                                     <Remove
                                                         onClick={() =>
                                                             setEstimate({
@@ -1490,66 +1544,151 @@ export default function DupaEdit({
                                                 </div>
                                             </div>
                                         ))}
-                                    </div>
-                                    <div
-                                        data-sheet-picker
-                                        className="flex justify-center"
-                                    >
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            className="sheet-add-labor"
-                                            variant="link"
-                                            onClick={() =>
-                                                setEstimate({
-                                                    ...estimate,
-                                                    labors: [
-                                                        ...estimate.labors,
-                                                        {
-                                                            labor_id: '',
-                                                            designation: '',
-                                                            no_of_person: 1,
-                                                            no_of_days: 1,
-                                                            rate: '',
-                                                            is_included: true,
-                                                        },
-                                                    ],
-                                                })
-                                            }
-                                        >
-                                            Add labor
-                                        </Button>
+                                        <ResourceSubtotal
+                                            className={laborGrid}
+                                            rowNumber={laborSheetRows + 2}
+                                            amountColumn={6}
+                                            label="Labor subtotal"
+                                            amount={computed.labor}
+                                        />
                                     </div>
                                 </div>
 
                                 <div
                                     data-sheet-section="equipment"
+                                    role="group"
+                                    aria-label="Equipment"
                                     className="dupa-resource-sheet border"
                                 >
-                                    <div className="dupa-section-heading">
-                                        <h3 className="font-semibold">
-                                            B. Equipment
-                                        </h3>
-                                    </div>
                                     <div
-                                        data-sheet-grid
-                                        className="overflow-x-auto"
+                                        className="dupa-section-heading"
+                                        data-sheet-group="B."
                                     >
-                                        {estimate.equipment.length > 0 && (
-                                            <ResourceColumns
-                                                columns="#,Equipment,Units,Days,Rental,Amount,Include"
-                                                className={`${laborGrid} min-w-[54rem]`}
-                                            />
+                                        <h3 className="font-semibold">
+                                            Equipment
+                                        </h3>
+                                        <div className="dupa-group-tools">
+                                            <span className="dupa-sheet-count">
+                                                {estimate.equipment.length}{' '}
+                                                {estimate.equipment.length === 1
+                                                    ? 'row'
+                                                    : 'rows'}
+                                            </span>
+                                            {canCreateResources && (
+                                                <QuickEquipmentCreate
+                                                    csrfToken={csrf_token}
+                                                    onCreated={(item) => {
+                                                        setEquipmentCatalog(
+                                                            (current) =>
+                                                                [
+                                                                    ...current,
+                                                                    item,
+                                                                ].sort((a, b) =>
+                                                                    a.equipment.localeCompare(
+                                                                        b.equipment,
+                                                                    ),
+                                                                ),
+                                                        );
+                                                        const rows = [
+                                                            ...estimate.equipment,
+                                                        ];
+                                                        const empty =
+                                                            rows.findIndex(
+                                                                (row) =>
+                                                                    !row.equipment_id,
+                                                            );
+                                                        const next = {
+                                                            row_uuid:
+                                                                empty >= 0
+                                                                    ? rows[
+                                                                          empty
+                                                                      ].row_uuid
+                                                                    : crypto.randomUUID(),
+                                                            equipment_id:
+                                                                item.id,
+                                                            designation:
+                                                                item.equipment,
+                                                            no_of_units: 1,
+                                                            no_of_days: 1,
+                                                            rental_unit_cost:
+                                                                item.rental,
+                                                            is_included: true,
+                                                        };
+
+                                                        if (empty >= 0) {
+                                                            rows[empty] = next;
+                                                        } else {
+                                                            rows.push(next);
+                                                        }
+
+                                                        setEstimate({
+                                                            ...estimate,
+                                                            equipment: rows,
+                                                        });
+                                                    }}
+                                                />
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div data-sheet-grid className="min-w-0">
+                                        <ResourceColumns
+                                            startRow={laborSheetRows + 3}
+                                            columns="#,Designation,No. of Units,No. of Days,Rental/unit cost,Amount,Use"
+                                            className={`${laborGrid}`}
+                                        />
+                                        {estimate.equipment.length === 0 && (
+                                            <div
+                                                data-sheet-row
+                                                data-sheet-empty
+                                                className={`grid ${laborGrid}`}
+                                            >
+                                                <span className="text-center text-xs text-slate-500">
+                                                    {laborSheetRows + 4}
+                                                </span>
+                                                <span className="col-start-2 col-end-[-2] px-3 py-2 text-xs text-slate-500">
+                                                    No equipment rows yet. Click
+                                                    + to add a row.
+                                                </span>
+                                                <div
+                                                    data-row-actions
+                                                    className="flex items-center justify-center"
+                                                >
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        title="Add equipment row"
+                                                        aria-label="Add first equipment row"
+                                                        disabled={
+                                                            saving ||
+                                                            backupDirty
+                                                        }
+                                                        onClick={() =>
+                                                            insertResourceRow(
+                                                                'equipment',
+                                                                -1,
+                                                            )
+                                                        }
+                                                    >
+                                                        <Plus className="size-3.5" />
+                                                    </Button>
+                                                </div>
+                                            </div>
                                         )}
                                         {estimate.equipment.map(
                                             (row, index) => (
                                                 <div
                                                     data-sheet-row
-                                                    className={`grid min-w-[54rem] items-center gap-1 border-b py-1 last:border-b-0 hover:bg-muted/30 ${laborGrid}`}
-                                                    key={index}
+                                                    data-resource-row={
+                                                        row.row_uuid
+                                                    }
+                                                    className={`grid items-center gap-1 border-b py-1 last:border-b-0 hover:bg-muted/30 ${laborGrid}`}
+                                                    key={row.row_uuid ?? index}
                                                 >
                                                     <span className="text-center text-xs text-muted-foreground tabular-nums">
-                                                        {index + 1}
+                                                        {index +
+                                                            laborSheetRows +
+                                                            4}
                                                     </span>
                                                     <div className="dupa-cell">
                                                         <select
@@ -1583,6 +1722,12 @@ export default function DupaEdit({
                                                                 );
                                                             }}
                                                         >
+                                                            <option
+                                                                value=""
+                                                                disabled
+                                                            >
+                                                                Select equipment
+                                                            </option>
                                                             {equipmentCatalog.map(
                                                                 (item) => (
                                                                     <option
@@ -1811,7 +1956,29 @@ export default function DupaEdit({
                                                             )
                                                         }
                                                     />
-                                                    <div className="flex items-center justify-end gap-1">
+                                                    <div
+                                                        data-row-actions
+                                                        className="flex items-center justify-center gap-0.5"
+                                                    >
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            title="Add row below"
+                                                            aria-label={`Add equipment row below row ${index + 1}`}
+                                                            disabled={
+                                                                saving ||
+                                                                backupDirty
+                                                            }
+                                                            onClick={() =>
+                                                                insertResourceRow(
+                                                                    'equipment',
+                                                                    index,
+                                                                )
+                                                            }
+                                                        >
+                                                            <Plus className="size-3.5" />
+                                                        </Button>
                                                         <Remove
                                                             onClick={() =>
                                                                 setEstimate({
@@ -1832,119 +1999,258 @@ export default function DupaEdit({
                                                 </div>
                                             ),
                                         )}
-                                    </div>
-                                    <ResourcePicker
-                                        title="Equipment"
-                                        items={equipmentCatalog.map((item) => ({
-                                            id: item.id,
-                                            label: `${item.equipment} · ${money.format(item.rental)}`,
-                                        }))}
-                                        onAdd={(id) => {
-                                            const item = equipmentCatalog.find(
-                                                (entry) => entry.id === id,
-                                            );
-
-                                            if (item) {
-                                                setEstimate({
-                                                    ...estimate,
-                                                    equipment: [
-                                                        ...estimate.equipment,
-                                                        {
-                                                            equipment_id:
-                                                                item.id,
-                                                            designation:
-                                                                item.equipment,
-                                                            no_of_units: 1,
-                                                            no_of_days: 1,
-                                                            rental_unit_cost:
-                                                                item.rental,
-                                                            is_included: true,
-                                                        },
-                                                    ],
-                                                });
+                                        <ResourceSubtotal
+                                            className={laborGrid}
+                                            rowNumber={
+                                                laborSheetRows +
+                                                equipmentSheetRows +
+                                                4
                                             }
-                                        }}
-                                        quickCreate={
-                                            canCreateResources ? (
-                                                <QuickEquipmentCreate
-                                                    csrfToken={csrf_token}
-                                                    onCreated={(item) => {
-                                                        setEquipmentCatalog(
-                                                            (current) =>
-                                                                [
-                                                                    ...current,
-                                                                    item,
-                                                                ].sort((a, b) =>
-                                                                    a.equipment.localeCompare(
-                                                                        b.equipment,
-                                                                    ),
-                                                                ),
-                                                        );
-                                                        setEstimate({
-                                                            ...estimate,
-                                                            equipment: [
-                                                                ...estimate.equipment,
-                                                                {
-                                                                    equipment_id:
-                                                                        item.id,
-                                                                    designation:
-                                                                        item.equipment,
-                                                                    no_of_units: 1,
-                                                                    no_of_days: 1,
-                                                                    rental_unit_cost:
-                                                                        item.rental,
-                                                                    is_included: true,
-                                                                },
-                                                            ],
-                                                        });
-                                                    }}
-                                                />
-                                            ) : undefined
-                                        }
-                                    />
+                                            amountColumn={6}
+                                            label="Equipment subtotal"
+                                            amount={computed.equipment}
+                                        />
+                                    </div>
                                 </div>
 
                                 <div
                                     data-sheet-section="items"
+                                    role="group"
+                                    aria-label="Materials"
                                     className="dupa-resource-sheet border"
                                 >
-                                    <div className="dupa-section-heading">
-                                        <h3 className="font-semibold">
-                                            C. Materials
-                                        </h3>
-                                    </div>
                                     <div
-                                        data-sheet-grid
-                                        className="overflow-x-auto"
+                                        className="dupa-section-heading"
+                                        data-sheet-group="C."
                                     >
-                                        {estimate.items.length > 0 && (
-                                            <ResourceColumns
-                                                columns="#,Material,Unit,Unit cost,Quantity,Group,Amount,Include"
-                                                className={`${itemGrid} min-w-[62rem]`}
-                                            />
+                                        <h3 className="font-semibold">
+                                            Materials
+                                        </h3>
+                                        <div className="dupa-group-tools">
+                                            <span className="dupa-sheet-count">
+                                                {estimate.items.length}{' '}
+                                                {estimate.items.length === 1
+                                                    ? 'row'
+                                                    : 'rows'}
+                                            </span>
+                                            {canSyncItems && (
+                                                <ItemSyncDialog
+                                                    categories={syncCategories}
+                                                    canSyncPrices={
+                                                        canSyncPrices
+                                                    }
+                                                    compact
+                                                    onSynced={(message) =>
+                                                        toast.success(message)
+                                                    }
+                                                />
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div data-sheet-grid className="min-w-0">
+                                        <ResourceColumns
+                                            startRow={
+                                                laborSheetRows +
+                                                equipmentSheetRows +
+                                                5
+                                            }
+                                            columns="#,Designation,Unit,Quantity,Unit cost,Amount,Use"
+                                            className={`${itemGrid}`}
+                                        />
+                                        {estimate.items.length === 0 && (
+                                            <div
+                                                data-sheet-row
+                                                data-sheet-empty
+                                                className={`grid ${itemGrid}`}
+                                            >
+                                                <span className="text-center text-xs text-slate-500">
+                                                    {laborSheetRows +
+                                                        equipmentSheetRows +
+                                                        6}
+                                                </span>
+                                                <span className="col-start-2 col-end-[-2] px-3 py-2 text-xs text-slate-500">
+                                                    No material rows yet. Click
+                                                    + to add a row.
+                                                </span>
+                                                <div
+                                                    data-row-actions
+                                                    className="flex items-center justify-center"
+                                                >
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        title="Add material row"
+                                                        aria-label="Add first material row"
+                                                        disabled={
+                                                            saving ||
+                                                            backupDirty
+                                                        }
+                                                        onClick={() =>
+                                                            insertResourceRow(
+                                                                'items',
+                                                                -1,
+                                                            )
+                                                        }
+                                                    >
+                                                        <Plus className="size-3.5" />
+                                                    </Button>
+                                                </div>
+                                            </div>
                                         )}
                                         {estimate.items.map((row, index) => (
-                                            <div key={index}>
+                                            <div key={row.row_uuid ?? index}>
                                                 <div
                                                     data-sheet-row
-                                                    className={`grid min-w-[62rem] items-center gap-1 ${itemGrid}`}
+                                                    data-resource-row={
+                                                        row.row_uuid
+                                                    }
+                                                    className={`grid items-center gap-1 ${itemGrid}`}
                                                 >
                                                     <span className="text-center text-xs text-muted-foreground tabular-nums">
-                                                        {index + 1}
+                                                        {index +
+                                                            laborSheetRows +
+                                                            equipmentSheetRows +
+                                                            6}
                                                     </span>
-                                                    <div className="flex min-h-8 items-center text-sm">
-                                                        {
-                                                            itemCatalog.find(
-                                                                (item) =>
-                                                                    item.id ===
-                                                                    row.item_id,
-                                                            )?.itemcode
-                                                        }{' '}
-                                                        · {row.designation}
+                                                    <div className="dupa-material-details">
+                                                        <div className="dupa-material-designation">
+                                                            <ItemPicker
+                                                                items={
+                                                                    itemCatalog
+                                                                }
+                                                                multiline
+                                                                value={
+                                                                    row.item_id
+                                                                        ? `${itemCatalog.find((item) => item.id === Number(row.item_id))?.itemcode ?? ''} · ${row.designation}`
+                                                                        : ''
+                                                                }
+                                                                onChange={(
+                                                                    item,
+                                                                ) => {
+                                                                    if (!item) {
+                                                                        return;
+                                                                    }
+
+                                                                    updateItem(
+                                                                        index,
+                                                                        {
+                                                                            ...row,
+                                                                            item_id:
+                                                                                item.id,
+                                                                            designation:
+                                                                                item.description,
+                                                                            unit: item.unit,
+                                                                            unit_cost:
+                                                                                item.price,
+                                                                        },
+                                                                    );
+                                                                }}
+                                                            />
+                                                        </div>
+                                                        <div className="dupa-cell">
+                                                            <Input
+                                                                data-sheet-column="group"
+                                                                aria-label={`Group for item row ${index + 1}`}
+                                                                list="project-item-groups"
+                                                                maxLength={255}
+                                                                placeholder="Group (optional)"
+                                                                title="Group (optional)"
+                                                                value={
+                                                                    row.group ??
+                                                                    ''
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) => {
+                                                                    updateItem(
+                                                                        index,
+                                                                        {
+                                                                            ...row,
+                                                                            group: event
+                                                                                .target
+                                                                                .value,
+                                                                        },
+                                                                    );
+                                                                }}
+                                                            />
+                                                        </div>
                                                     </div>
                                                     <div className="flex min-h-8 items-center text-sm">
                                                         {row.unit}
                                                     </div>
+
+                                                    <BackupDaysCell
+                                                        key={`${side}-${row.row_uuid ?? index}`}
+                                                        label={`Quantity for item row ${index + 1}`}
+                                                        placeholder="Quantity or =result"
+                                                        showFormulaButton
+                                                        value={row.qty}
+                                                        formula={
+                                                            estimate.backup_applied?.document.bindings.find(
+                                                                (b) =>
+                                                                    b.kind ===
+                                                                        'items' &&
+                                                                    b.field ===
+                                                                        'qty' &&
+                                                                    b.row_uuid ===
+                                                                        row.row_uuid,
+                                                            )?.formula
+                                                        }
+                                                        options={(
+                                                            estimate.backups ??
+                                                            []
+                                                        ).flatMap((b) =>
+                                                            b.definition.outputs.map(
+                                                                (o) => ({
+                                                                    value: `=${b.key}.outputs.${o.key}`,
+                                                                    label: `${b.name} / ${o.label}`,
+                                                                }),
+                                                            ),
+                                                        )}
+                                                        disabled={saving}
+                                                        canLink={
+                                                            !saving &&
+                                                            !backupDirty &&
+                                                            Boolean(
+                                                                row.row_uuid,
+                                                            )
+                                                        }
+                                                        onResult={(formula) =>
+                                                            switchResult(
+                                                                'items',
+                                                                'qty',
+                                                                row.row_uuid!,
+                                                                formula,
+                                                            )
+                                                        }
+                                                        onManual={async (
+                                                            value,
+                                                        ) => {
+                                                            if (
+                                                                bound(
+                                                                    'items',
+                                                                    'qty',
+                                                                    row.row_uuid,
+                                                                )
+                                                            ) {
+                                                                return switchResult(
+                                                                    'items',
+                                                                    'qty',
+                                                                    row.row_uuid!,
+                                                                    '',
+                                                                    value,
+                                                                );
+                                                            }
+
+                                                            updateItem(index, {
+                                                                ...row,
+                                                                qty: value,
+                                                            });
+
+                                                            return true;
+                                                        }}
+                                                    />
                                                     <div className="flex min-h-8 items-center text-sm tabular-nums">
                                                         {money.format(
                                                             number(
@@ -1952,70 +2258,7 @@ export default function DupaEdit({
                                                             ),
                                                         )}
                                                     </div>
-                                                    <div className="min-w-0 space-y-1">
-                                                        <Input
-                                                            data-sheet-column="quantity"
-                                                            aria-label={`Quantity for item row ${index + 1}`}
-                                                            type="number"
-                                                            min="0"
-                                                            step="0.0001"
-                                                            title="Quantity"
-                                                            value={row.qty}
-                                                            readOnly={bound(
-                                                                'items',
-                                                                'qty',
-                                                                row.row_uuid,
-                                                            )}
-                                                            onChange={(event) =>
-                                                                updateItem(
-                                                                    index,
-                                                                    {
-                                                                        ...row,
-                                                                        qty: event
-                                                                            .target
-                                                                            .value,
-                                                                    },
-                                                                )
-                                                            }
-                                                        />
-                                                        {resultPicker(
-                                                            'items',
-                                                            'qty',
-                                                            row.row_uuid,
-                                                        )}
-                                                    </div>
-                                                    <div className="dupa-cell">
-                                                        <Input
-                                                            data-sheet-column="group"
-                                                            aria-label={`Group for item row ${index + 1}`}
-                                                            list="project-item-groups"
-                                                            maxLength={255}
-                                                            placeholder="Group (optional)"
-                                                            title="Group (optional)"
-                                                            value={
-                                                                row.group ?? ''
-                                                            }
-                                                            onChange={(
-                                                                event,
-                                                            ) => {
-                                                                updateItem(
-                                                                    index,
-                                                                    {
-                                                                        ...row,
-                                                                        group: event
-                                                                            .target
-                                                                            .value,
-                                                                    },
-                                                                );
-                                                                setItemDraft({
-                                                                    ...itemDraft,
-                                                                    group: event
-                                                                        .target
-                                                                        .value,
-                                                                });
-                                                            }}
-                                                        />
-                                                    </div>
+
                                                     <output
                                                         className="pr-1 text-right text-xs font-medium tabular-nums"
                                                         aria-label={`Item row ${index + 1} amount`}
@@ -2040,7 +2283,29 @@ export default function DupaEdit({
                                                             })
                                                         }
                                                     />
-                                                    <div className="flex items-center justify-end gap-1">
+                                                    <div
+                                                        data-row-actions
+                                                        className="flex items-center justify-center gap-0.5"
+                                                    >
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            title="Add row below"
+                                                            aria-label={`Add material row below row ${index + 1}`}
+                                                            disabled={
+                                                                saving ||
+                                                                backupDirty
+                                                            }
+                                                            onClick={() =>
+                                                                insertResourceRow(
+                                                                    'items',
+                                                                    index,
+                                                                )
+                                                            }
+                                                        >
+                                                            <Plus className="size-3.5" />
+                                                        </Button>
                                                         <Remove
                                                             onClick={() =>
                                                                 setEstimate({
@@ -2060,184 +2325,27 @@ export default function DupaEdit({
                                                 </div>
                                             </div>
                                         ))}
-                                    </div>
-                                    <div
-                                        data-sheet-picker
-                                        className="space-y-2 rounded-md border bg-muted/20 p-2"
-                                    >
-                                        <div className="flex items-center justify-between gap-2">
-                                            <span className="text-xs text-muted-foreground">
-                                                Add material
-                                            </span>
-                                            <span className="text-xs text-muted-foreground">
-                                                {itemCatalog.length} catalog
-                                                item(s)
-                                            </span>
-                                        </div>
-                                        <div className="dupa-material-entry grid gap-2">
-                                            <div className="flex min-w-0 gap-2">
-                                                <div className="min-w-0 flex-1">
-                                                    <ItemPicker
-                                                        key={side}
-                                                        items={itemCatalog}
-                                                        value={
-                                                            itemDraft.item_search
-                                                        }
-                                                        onChange={(
-                                                            item,
-                                                            search,
-                                                        ) =>
-                                                            setItemDraft({
-                                                                ...itemDraft,
-                                                                item_id: item
-                                                                    ? String(
-                                                                          item.id,
-                                                                      )
-                                                                    : '',
-                                                                item_search:
-                                                                    search,
-                                                            })
-                                                        }
-                                                    />
-                                                </div>
-                                                {canSyncItems && (
-                                                    <ItemSyncDialog
-                                                        categories={
-                                                            syncCategories
-                                                        }
-                                                        canSyncPrices={
-                                                            canSyncPrices
-                                                        }
-                                                        compact
-                                                        onSynced={(message) =>
-                                                            toast.success(
-                                                                message,
-                                                            )
-                                                        }
-                                                    />
-                                                )}
-                                            </div>
-                                            <Input
-                                                aria-label="Selected item unit"
-                                                title="Unit"
-                                                placeholder="Unit"
-                                                value={selectedItem?.unit ?? ''}
-                                                readOnly
-                                                className="bg-muted/40"
-                                            />
-                                            <Input
-                                                aria-label="Selected item price"
-                                                title="Current item price"
-                                                placeholder="Price"
-                                                value={
-                                                    selectedItem
-                                                        ? money.format(
-                                                              selectedItem.price,
-                                                          )
-                                                        : ''
-                                                }
-                                                readOnly
-                                                className="bg-muted/40 tabular-nums"
-                                            />
-                                            <Input
-                                                type="number"
-                                                min="0"
-                                                step="0.0001"
-                                                title="Quantity"
-                                                placeholder="Quantity"
-                                                value={itemDraft.qty}
-                                                onChange={(event) =>
-                                                    setItemDraft({
-                                                        ...itemDraft,
-                                                        qty: event.target.value,
-                                                    })
-                                                }
-                                            />
-                                            <Input
-                                                list="project-item-groups"
-                                                maxLength={255}
-                                                title="Group"
-                                                placeholder="Group (optional)"
-                                                value={itemDraft.group}
-                                                onChange={(event) =>
-                                                    setItemDraft({
-                                                        ...itemDraft,
-                                                        group: event.target
-                                                            .value,
-                                                    })
-                                                }
-                                            />
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                variant="outline"
-                                                disabled={
-                                                    !itemDraft.item_id ||
-                                                    itemDraft.qty === '' ||
-                                                    number(itemDraft.qty) < 0
-                                                }
-                                                onClick={() => {
-                                                    const item =
-                                                        itemCatalog.find(
-                                                            (entry) =>
-                                                                entry.id ===
-                                                                Number(
-                                                                    itemDraft.item_id,
-                                                                ),
-                                                        );
 
-                                                    if (!item) {
-                                                        return;
-                                                    }
-
-                                                    setEstimate({
-                                                        ...estimate,
-                                                        items: [
-                                                            ...estimate.items,
-                                                            {
-                                                                item_id:
-                                                                    item.id,
-                                                                designation:
-                                                                    item.description,
-                                                                unit: item.unit,
-                                                                qty: itemDraft.qty,
-                                                                unit_cost:
-                                                                    item.price,
-                                                                group:
-                                                                    itemDraft.group.trim() ||
-                                                                    null,
-                                                                is_included: true,
-                                                            },
-                                                        ],
-                                                    });
-                                                    setItemDraft({
-                                                        ...itemDraft,
-                                                        item_id: '',
-                                                        item_search: '',
-                                                        qty: 1,
-                                                    });
-                                                }}
-                                            >
-                                                <Plus /> Add item
-                                            </Button>
-                                        </div>
-                                        <datalist id="project-item-groups">
-                                            {groupOptions.map((group) => (
-                                                <option
-                                                    key={group}
-                                                    value={group}
-                                                />
-                                            ))}
-                                        </datalist>
-                                        <p className="text-xs text-muted-foreground">
-                                            Unit and current effective price
-                                            come from the item library. The
-                                            group stays filled for the next
-                                            item.
-                                        </p>
+                                        <ResourceSubtotal
+                                            className={itemGrid}
+                                            rowNumber={
+                                                laborSheetRows +
+                                                equipmentSheetRows +
+                                                materialSheetRows +
+                                                6
+                                            }
+                                            amountColumn={6}
+                                            label="Materials subtotal"
+                                            amount={computed.items}
+                                        />
                                     </div>
                                 </div>
-                            </div>
+                            </div>{' '}
+                            <datalist id="project-item-groups">
+                                {groupOptions.map((group) => (
+                                    <option key={group} value={group} />
+                                ))}
+                            </datalist>
                             <aside
                                 className="dupa-analysis-summary"
                                 aria-label="Estimate totals"
@@ -2628,81 +2736,13 @@ function QuickEquipmentCreate({
     );
 }
 
-function ResourcePicker({
-    title,
-    items,
-    onAdd,
-    quickCreate,
-}: {
-    title: string;
-    items: Array<{ id: number; label: string }>;
-    onAdd: (id: number) => void;
-    quickCreate?: React.ReactNode;
-}) {
-    const [selectedId, setSelectedId] = useState('');
-
-    return (
-        <div
-            data-sheet-picker
-            className="space-y-2 rounded-md border bg-muted/20 p-2"
-        >
-            <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-muted-foreground">
-                    Add {title.toLowerCase()}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                    {items.length} catalog item(s)
-                </span>
-            </div>
-            <div className="grid gap-2 md:grid-cols-[1fr_auto]">
-                <div className="flex min-w-0 items-center">
-                    <select
-                        className={`h-9 min-w-0 flex-1 border border-input bg-background px-2 text-sm ${
-                            quickCreate
-                                ? 'rounded-l-md rounded-r-none'
-                                : 'rounded-md'
-                        }`}
-                        value={selectedId}
-                        onChange={(event) => setSelectedId(event.target.value)}
-                    >
-                        <option value="">
-                            {items.length
-                                ? `Select ${title.toLowerCase()}`
-                                : `No ${title.toLowerCase()} items available`}
-                        </option>
-                        {items.map((item) => (
-                            <option key={item.id} value={item.id}>
-                                {item.label}
-                            </option>
-                        ))}
-                    </select>
-                    {quickCreate && (
-                        <div className="flex h-7 shrink-0 items-center">
-                            {quickCreate}
-                        </div>
-                    )}
-                </div>
-                <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={!selectedId}
-                    onClick={() => {
-                        onAdd(Number(selectedId));
-                        setSelectedId('');
-                    }}
-                >
-                    <Plus /> Add {title.toLowerCase()}
-                </Button>
-            </div>
-        </div>
-    );
-}
 function ItemPicker({
     items,
     value,
     onChange,
+    multiline = false,
 }: {
+    multiline?: boolean;
     items: ItemCatalog[];
     value: string;
     onChange: (item: ItemCatalog | null, search: string) => void;
@@ -2712,7 +2752,7 @@ function ItemPicker({
     const [active, setActive] = useState(0);
     const container = useRef<HTMLDivElement>(null);
     const searchInput = useRef<HTMLInputElement>(null);
-    const listId = 'dupa-item-options';
+    const listId = useId();
     const matches = useMemo(() => {
         const terms = query
             .trim()
@@ -2769,6 +2809,7 @@ function ItemPicker({
             <button
                 type="button"
                 aria-label="Select catalog item"
+                title={value || 'Select an item'}
                 aria-haspopup="listbox"
                 aria-expanded={open}
                 aria-controls={listId}
@@ -2781,7 +2822,7 @@ function ItemPicker({
                 }}
             >
                 <span
-                    className={`truncate ${value ? '' : 'text-muted-foreground'}`}
+                    className={`${multiline ? 'text-xs leading-snug whitespace-normal' : 'truncate'} ${value ? '' : 'text-muted-foreground'}`}
                 >
                     {value ||
                         (items.length
@@ -2798,7 +2839,7 @@ function ItemPicker({
                         aria-controls={listId}
                         aria-activedescendant={
                             matches[active]
-                                ? `dupa-item-${matches[active].id}`
+                                ? `${listId}-item-${matches[active].id}`
                                 : undefined
                         }
                         autoComplete="off"
@@ -2842,7 +2883,7 @@ function ItemPicker({
                             matches.map((item, index) => (
                                 <button
                                     key={item.id}
-                                    id={`dupa-item-${item.id}`}
+                                    id={`${listId}-item-${item.id}`}
                                     type="button"
                                     role="option"
                                     aria-selected={index === active}
@@ -2880,24 +2921,90 @@ function ItemPicker({
 function ResourceColumns({
     columns,
     className,
+    startRow = 1,
 }: {
     columns: string;
     className: string;
+    startRow?: number;
+}) {
+    const headings = columns.split(',');
+
+    return (
+        <>
+            <div
+                data-sheet-columns
+                data-sheet-letters
+                className={`grid text-[10px] ${className}`}
+                aria-hidden="true"
+            >
+                {headings.map((heading, index) => (
+                    <span key={heading}>
+                        {index === 0 ? '' : String.fromCharCode(64 + index)}
+                    </span>
+                ))}
+                <span />
+            </div>
+            <div
+                data-sheet-columns
+                className={`grid text-[11px] font-semibold ${className}`}
+            >
+                {headings.map((heading, index) => (
+                    <span
+                        key={heading}
+                        className={
+                            heading === 'Use'
+                                ? '!px-0 whitespace-nowrap'
+                                : undefined
+                        }
+                    >
+                        {index === 0 ? startRow : heading}
+                    </span>
+                ))}
+                <span className="text-[10px] font-normal">Actions</span>
+            </div>
+        </>
+    );
+}
+
+function ResourceSubtotal({
+    className,
+    rowNumber,
+    amountColumn,
+    label,
+    amount,
+}: {
+    className: string;
+    rowNumber: number;
+    amountColumn: number;
+    label: string;
+    amount: number;
 }) {
     return (
-        <div
-            data-sheet-columns
-            className={`grid text-[11px] font-semibold ${className}`}
-        >
-            {columns.split(',').map((column) => (
-                <span key={column}>{column}</span>
-            ))}
-            <span>
-                <span className="sr-only">Actions</span>
+        <div data-sheet-row data-sheet-total className={`grid ${className}`}>
+            <span className="text-center text-xs text-slate-500">
+                {rowNumber}
             </span>
+            <span
+                style={{ gridColumn: `2 / ${amountColumn}` }}
+                className="px-2 py-2 text-xs font-semibold"
+            >
+                {label}{' '}
+                <span className="font-normal text-slate-500">
+                    · included rows
+                </span>
+            </span>
+            <output
+                style={{ gridColumn: amountColumn }}
+                className="px-2 py-2 text-right text-xs font-semibold tabular-nums"
+                aria-label={label}
+            >
+                {money.format(amount)}
+            </output>
+            <span style={{ gridColumn: `${amountColumn + 1} / -1` }} />
         </div>
     );
 }
+
 function Include({
     checked,
     onChange,
@@ -2919,7 +3026,14 @@ function Include({
 }
 function Remove({ onClick }: { onClick: () => void }) {
     return (
-        <Button type="button" size="sm" variant="ghost" onClick={onClick}>
+        <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-label="Remove row"
+            title="Remove row"
+            onClick={onClick}
+        >
             <Trash2 />
         </Button>
     );
