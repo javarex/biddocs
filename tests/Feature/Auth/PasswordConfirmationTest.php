@@ -30,4 +30,29 @@ class PasswordConfirmationTest extends TestCase
 
         $response->assertRedirect(route('login'));
     }
+
+    public function test_password_can_be_confirmed_without_a_login_field(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->post(route('password.confirm.store'), [
+            'password' => 'password',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHasNoErrors();
+        $response->assertSessionHas('auth.password_confirmed_at');
+    }
+
+    public function test_incorrect_password_cannot_be_confirmed(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->post(route('password.confirm.store'), [
+            'password' => 'incorrect-password',
+        ]);
+
+        $response->assertSessionHasErrors('password');
+        $response->assertSessionMissing('auth.password_confirmed_at');
+    }
 }
