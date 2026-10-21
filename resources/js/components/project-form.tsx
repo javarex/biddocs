@@ -9,6 +9,7 @@ import ProjectCharges from '@/components/project-charges';
 import type { ProjectChargeFields, Total } from '@/components/project-charges';
 import ProjectMarkupRates from '@/components/project-markup-rates';
 import type { MarkupRateBand } from '@/components/project-markup-rates';
+import ProjectWorksheetFields from '@/components/project-worksheet-fields';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -300,141 +301,6 @@ export default function ProjectForm({
         </div>
     );
 
-    const typeControl = (
-        <div className="space-y-2">
-            <Label>4. Type of project</Label>
-            <div className="flex flex-wrap gap-1">
-                {projectTypes.map((type) => (
-                    <label
-                        key={type}
-                        className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm ${selectedType === type ? 'border-primary bg-primary/5' : ''}`}
-                    >
-                        <input
-                            type="checkbox"
-                            className="size-4"
-                            checked={selectedType === type}
-                            onChange={() =>
-                                form.setData({
-                                    ...form.data,
-                                    type_of_projects:
-                                        selectedType === type ? '' : type,
-                                    category: '',
-                                })
-                            }
-                        />
-                        {type}
-                    </label>
-                ))}
-            </div>
-            <p className="text-xs text-muted-foreground">
-                Select one project type.
-            </p>
-            <InputError message={form.errors.type_of_projects} />
-        </div>
-    );
-    const categoryControl = (
-        <div className="space-y-2">
-            <Label>6. Category</Label>
-            {!selectedType ? (
-                <p className="text-sm text-muted-foreground">
-                    Select a project type to view its categories.
-                </p>
-            ) : (
-                <div className="flex flex-wrap gap-1">
-                    {availableCategories.map((category) => (
-                        <label
-                            key={category}
-                            className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm ${selectedCategory === category ? 'border-primary bg-primary/5' : ''}`}
-                        >
-                            <input
-                                type="checkbox"
-                                className="size-4"
-                                checked={selectedCategory === category}
-                                onChange={() =>
-                                    form.setData(
-                                        'category',
-                                        selectedCategory === category
-                                            ? ''
-                                            : category,
-                                    )
-                                }
-                            />
-                            {category}
-                        </label>
-                    ))}
-                    <label
-                        className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm ${isOtherCategory ? 'border-primary bg-primary/5' : ''}`}
-                    >
-                        <input
-                            type="checkbox"
-                            className="size-4"
-                            checked={isOtherCategory}
-                            onChange={() =>
-                                form.setData(
-                                    'category',
-                                    isOtherCategory ? '' : 'Others: ',
-                                )
-                            }
-                        />
-                        Others (specify)
-                    </label>
-                </div>
-            )}
-            {selectedType && isOtherCategory && (
-                <Input
-                    aria-label="Specify other project category"
-                    placeholder="Specify category"
-                    value={specifiedCategory}
-                    onChange={(event) =>
-                        form.setData(
-                            'category',
-                            `Others: ${event.target.value}`,
-                        )
-                    }
-                />
-            )}
-            <InputError message={form.errors.category} />
-        </div>
-    );
-    const allotmentControl = (
-        <div className="space-y-1">
-            <Label htmlFor="allotment_class">8.1. Allotment class</Label>
-            <select
-                id="allotment_class"
-                className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                value={form.data.allotment_class ?? ''}
-                onChange={(event) =>
-                    form.setData('allotment_class', event.target.value)
-                }
-            >
-                <option value="">Select allotment class</option>
-                <option value="Trust Fund">Trust Fund</option>
-                <option value="General Fund">General Fund</option>
-            </select>
-            <InputError message={form.errors.allotment_class} />
-        </div>
-    );
-    const schemeControl = (
-        <div className="space-y-1">
-            <Label htmlFor="implementation_scheme">
-                9. Implementation scheme
-            </Label>
-            <select
-                id="implementation_scheme"
-                className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                value={form.data.implementation_scheme ?? ''}
-                onChange={(event) =>
-                    form.setData('implementation_scheme', event.target.value)
-                }
-            >
-                <option value="">Select scheme</option>
-                <option value="Administration">Administration</option>
-                <option value="contract">Contract</option>
-            </select>
-            <InputError message={form.errors.implementation_scheme} />
-        </div>
-    );
-
     return (
         <>
             <form
@@ -465,115 +331,24 @@ export default function ProjectForm({
                     <div className="min-w-0 space-y-3">
                         {worksheet ? (
                             <div className="overflow-x-auto rounded-lg border bg-white text-slate-950 shadow-sm">
-                                <div className="min-w-[900px] p-4 [&_input]:h-8 [&_input]:text-slate-950 [&_input:not([type=checkbox])]:rounded-none [&_input:not([type=checkbox])]:border-0 [&_input:not([type=checkbox])]:bg-transparent [&_input:not([type=checkbox])]:px-0 [&_input:not([type=checkbox])]:shadow-none [&_input:not([type=checkbox])]:focus-visible:ring-1 [&_input:not([type=checkbox])]:focus-visible:ring-emerald-600 [&_input:not([type=checkbox])]:focus-visible:ring-inset [&_label]:text-slate-700 [&_select]:h-8 [&_select]:rounded-none [&_select]:border-0 [&_select]:bg-transparent [&_select]:px-0 [&_select]:text-slate-950 [&_select]:shadow-none [&_select]:focus-visible:outline-1 [&_select]:focus-visible:outline-emerald-600 [&_textarea]:rounded-none [&_textarea]:border-0 [&_textarea]:bg-transparent [&_textarea]:px-0 [&_textarea]:text-slate-950 [&_textarea]:shadow-none [&_textarea]:focus-visible:outline-1 [&_textarea]:focus-visible:outline-emerald-600">
-                                    <div className="border border-slate-400 py-3 text-center text-base font-bold">
-                                        SUMMARY OF ESTIMATED COST
+                                <div className="min-w-[960px] p-2 md:p-3 [&_input:not([type=checkbox])]:font-semibold [&_label]:font-normal [&_select]:font-semibold">
+                                    <div className="border border-slate-400 py-1.5 text-center text-sm font-bold">
+                                        {project
+                                            ? 'SUMMARY OF ESTIMATED COST'
+                                            : 'PROJECT INFORMATION'}
                                     </div>
-                                    <div className="grid grid-cols-[minmax(10rem,0.75fr)_minmax(0,2fr)_minmax(0,1fr)] text-sm [&>div]:border [&>div]:border-slate-400 [&>div]:px-2 [&>div]:py-1.5">
-                                        <div>
-                                            {field(
-                                                'project_date',
-                                                '1.) Project Date:',
-                                                'date',
-                                            )}
-                                        </div>
-                                        <div className="col-span-2">
-                                            {field(
-                                                'project_name',
-                                                '2.) Name of Project:',
-                                            )}
-                                        </div>
-                                        <div className="col-span-3">
-                                            {field('location', '3.) Location:')}
-                                        </div>
-                                        <div>{typeControl}</div>
-                                        <div className="col-span-1 space-y-1">
-                                            <Label htmlFor="project_description">
-                                                5.) Project Description:
-                                            </Label>
-                                            <AutoRowTextarea
-                                                id="project_description"
-                                                className="w-full rounded-md border px-3 py-2 text-sm"
-                                                value={
-                                                    form.data
-                                                        .project_description ??
-                                                    ''
-                                                }
-                                                onChange={(e) =>
-                                                    form.setData(
-                                                        'project_description',
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                            <InputError
-                                                message={
-                                                    form.errors
-                                                        .project_description
-                                                }
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <Label htmlFor="dimension">
-                                                5.1) Dimension:
-                                            </Label>
-                                            <AutoRowTextarea
-                                                id="dimension"
-                                                className="w-full rounded-md border px-3 py-2 text-sm"
-                                                value={
-                                                    form.data.dimension ?? ''
-                                                }
-                                                onChange={(e) =>
-                                                    form.setData(
-                                                        'dimension',
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                            <InputError
-                                                message={form.errors.dimension}
-                                            />
-                                        </div>
-                                        <div className="col-span-1">
-                                            {categoryControl}
-                                        </div>
-                                        <div className="col-span-2">
-                                            {field(
-                                                'source_of_funds',
-                                                '8.) Source of Funds:',
-                                            )}
-                                        </div>
-                                        <div>
-                                            {field(
-                                                'floor_area',
-                                                '5.2) Floor Area:',
-                                            )}
-                                        </div>
-                                        <div className="col-span-2">
-                                            {allotmentControl}
-                                        </div>
-                                        <div>
-                                            {field(
-                                                'contract_duration',
-                                                '7.) Calendar days to Complete:',
-                                                'number',
-                                            )}
-                                        </div>
-                                        <div className="col-span-2">
-                                            {schemeControl}
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-4 border-x border-b border-slate-400 px-3 py-2">
-                                        <div className="mr-auto text-sm font-semibold">
-                                            10.) Summary of Estimated Cost
-                                        </div>
-                                        {field(
-                                            'allocated_amount',
-                                            'Allocated amount (₱):',
-                                            'number',
-                                            'w-64',
-                                        )}
-                                    </div>
+                                    <ProjectWorksheetFields
+                                        data={form.data}
+                                        onChange={(next) =>
+                                            form.setData({
+                                                ...form.data,
+                                                ...next,
+                                            })
+                                        }
+                                        errors={form.errors}
+                                        markupRateBands={markupRateBands}
+                                        showCostHeading={Boolean(project)}
+                                    />
                                 </div>
                             </div>
                         ) : (
